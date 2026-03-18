@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import TeamBracketPrintBoard from "@/components/TeamBracketPrintBoard";
+import { formatLeagueSourceLabel } from "@/lib/team/displaySources";
+
 
 export const dynamic = "force-dynamic";
 
@@ -110,8 +112,7 @@ export default async function TeamBracketPrintPage({ params }: PageProps) {
         bracketLabel: getBracketLabel(bracketType),
         roundNo: match.round_no,
         matchNo: match.match_no,
-        import { formatLeagueSourceLabel } from "@/lib/team/displaySources";
-
+        
 team1Name: match.player1_entry_id
   ? entryMap.get(String(match.player1_entry_id))?.entry_name ?? "未定"
   : formatLeagueSourceLabel({
