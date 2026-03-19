@@ -45,7 +45,9 @@ async function recomputeMatchFromPredecessors(
     .single<MatchNode>();
 
   if (currentError || !current) {
-    throw new Error(`次戦取得に失敗しました: ${currentError?.message ?? "not found"}`);
+    throw new Error(
+      `次戦取得に失敗しました: ${currentError?.message ?? "not found"}`
+    );
   }
 
   const { data: prevMatches, error: prevError } = await supabase
@@ -62,16 +64,22 @@ async function recomputeMatchFromPredecessors(
   const prevSlot2 = (prevMatches ?? []).find((m) => m.next_slot === 2) ?? null;
 
   const newPlayer1 =
-    prevSlot1 && prevSlot1.status === "completed" ? prevSlot1.winner_entry_id ?? null : null;
+    prevSlot1 && prevSlot1.status === "completed"
+      ? prevSlot1.winner_entry_id ?? null
+      : null;
+
   const newPlayer2 =
-    prevSlot2 && prevSlot2.status === "completed" ? prevSlot2.winner_entry_id ?? null : null;
+    prevSlot2 && prevSlot2.status === "completed"
+      ? prevSlot2.winner_entry_id ?? null
+      : null;
 
   const playersChanged =
-    current.player1_entry_id !== newPlayer1 || current.player2_entry_id !== newPlayer2;
+    current.player1_entry_id !== newPlayer1 ||
+    current.player2_entry_id !== newPlayer2;
 
-  let nextStatus = current.status ?? "pending";
-  let nextWinner = current.winner_entry_id ?? null;
-  let nextScore = current.score_text ?? null;
+  let nextStatus: string = current.status ?? "pending";
+  let nextWinner: string | null = current.winner_entry_id ?? null;
+  let nextScore: string | null = current.score_text ?? null;
 
   const bothReady = !!newPlayer1 && !!newPlayer2;
 
@@ -106,9 +114,9 @@ async function recomputeMatchFromPredecessors(
       winner_entry_id: current.winner_entry_id,
     })
   ) {
-    nextStatus = current.status;
-    nextWinner = current.winner_entry_id;
-    nextScore = current.score_text;
+    nextStatus = current.status ?? "pending";
+    nextWinner = current.winner_entry_id ?? null;
+    nextScore = current.score_text ?? null;
   }
 
   const { error: updateError } = await supabase
@@ -142,7 +150,9 @@ export async function recomputeDownstreamFromMatch(
     .single<{ id: string; next_match_id: string | null }>();
 
   if (error || !current) {
-    throw new Error(`現在試合取得に失敗しました: ${error?.message ?? "not found"}`);
+    throw new Error(
+      `現在試合取得に失敗しました: ${error?.message ?? "not found"}`
+    );
   }
 
   if (!current.next_match_id) return;

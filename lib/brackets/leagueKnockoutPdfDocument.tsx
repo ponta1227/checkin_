@@ -5,6 +5,7 @@ import {
   Text,
   View,
   Svg,
+  G,
   Rect,
   Line,
   Circle,
@@ -36,6 +37,39 @@ export type PdfBracketMatch = {
   source_rank_2?: number | null;
 };
 
+type PdfBracketPanelProps = {
+  title: string;
+  segmentTitle: string;
+  matches: PdfBracketMatch[];
+  baseRoundNo: number;
+  segmentStart: number;
+  entryLabelMap: Record<string, string>;
+  placeholderLabelMap?: Record<string, string>;
+};
+
+type LeagueKnockoutPdfDocumentProps = {
+  tournamentName: string;
+  divisionName: string;
+  targetBrackets: Array<{ id: string; bracket_type: string }>;
+  matchesByBracket: Map<string, PdfBracketMatch[]>;
+  entryLabelMap: Record<string, string>;
+  placeholderLabelMap?: Record<string, string>;
+};
+
+/**
+ * @react-pdf/renderer の JSX 型と React / TS の相性で
+ * 「does not have a 'props' property」が出る環境向けの回避。
+ */
+const PdfDocument = Document as any;
+const PdfPage = Page as any;
+const PdfText = Text as any;
+const PdfView = View as any;
+const PdfSvg = Svg as any;
+const PdfG = G as any;
+const PdfRect = Rect as any;
+const PdfLine = Line as any;
+const PdfCircle = Circle as any;
+
 const styles = StyleSheet.create({
   page: {
     padding: 24,
@@ -48,50 +82,46 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 15,
     textAlign: "center",
-    border: "2 solid #222",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: "#222",
     backgroundColor: "#d9e8e8",
     padding: 6,
     marginBottom: 10,
   },
   grid2: {
     flexDirection: "row",
-    gap: 10,
   },
   grid1: {
     flexDirection: "column",
   },
   panel: {
     flex: 1,
-    border: "1 solid #ddd",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#ddd",
     padding: 8,
     backgroundColor: "#fff",
+  },
+  panelLeft: {
+    marginRight: 10,
   },
   panelTitle: {
     fontSize: 11,
     marginBottom: 6,
-    fontWeight: 700,
+    fontWeight: "bold",
   },
 });
 
-function PdfBracketPanel(props: {
-  title: string;
-  segmentTitle: string;
-  matches: PdfBracketMatch[];
-  baseRoundNo: number;
-  segmentStart: number;
-  entryLabelMap: Record<string, string>;
-  placeholderLabelMap?: Record<string, string>;
-}) {
-  const {
-    title,
-    segmentTitle,
-    matches,
-    baseRoundNo,
-    segmentStart,
-    entryLabelMap,
-    placeholderLabelMap,
-  } = props;
-
+function PdfBracketPanel({
+  title,
+  segmentTitle,
+  matches,
+  baseRoundNo,
+  segmentStart,
+  entryLabelMap,
+  placeholderLabelMap,
+}: PdfBracketPanelProps) {
   const layout = buildPanelLayout({
     matches,
     baseRoundNo,
@@ -102,23 +132,31 @@ function PdfBracketPanel(props: {
   const svgHeight = layout.boardHeight + 10;
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelTitle}>{`${title} / ${segmentTitle}`}</Text>
+    <PdfView style={styles.panel}>
+      <PdfText style={styles.panelTitle}>{`${title} / ${segmentTitle}`}</PdfText>
 
-      <Svg width="100%" height={260} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+      <PdfSvg width="100%" height={260} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
         {layout.roundNos.map((roundNo, idx) => (
-          <Text
+          <PdfText
             key={`r-${roundNo}`}
             x={idx * PDF_LAYOUT.roundGap}
             y={12}
             style={{ fontSize: 9 }}
           >
             {`${roundNo}回戦`}
-          </Text>
+          </PdfText>
         ))}
 
         {layout.nodes.map((node) => {
-          const { match, x, y, centerY, nextCenterY, nextCardLeft, showJoin } = node;
+          const {
+            match,
+            x,
+            y,
+            centerY,
+            nextCenterY,
+            nextCardLeft,
+            showJoin,
+          } = node;
 
           const player1 = truncateText(
             getDisplayName({
@@ -151,6 +189,7 @@ function PdfBracketPanel(props: {
             PDF_LAYOUT.circleRadius;
 
           const circleCy = centerY;
+
           const joinX =
             x +
             PDF_LAYOUT.cardWidth +
@@ -161,8 +200,8 @@ function PdfBracketPanel(props: {
           const color = getMatchNumberColor(match);
 
           return (
-            <View key={match.id}>
-              <Rect
+            <PdfG key={match.id}>
+              <PdfRect
                 x={x}
                 y={y}
                 width={PDF_LAYOUT.cardWidth}
@@ -171,7 +210,8 @@ function PdfBracketPanel(props: {
                 fill="#fff"
                 strokeWidth={1}
               />
-              <Line
+
+              <PdfLine
                 x1={x}
                 y1={y + PDF_LAYOUT.rowHeight}
                 x2={x + PDF_LAYOUT.cardWidth}
@@ -180,14 +220,19 @@ function PdfBracketPanel(props: {
                 strokeWidth={1}
               />
 
-              <Text x={x + 5} y={y + 14} style={{ fontSize: 7.5 }}>
+              <PdfText x={x + 5} y={y + 14} style={{ fontSize: 7.5 }}>
                 {player1}
-              </Text>
-              <Text x={x + 5} y={y + PDF_LAYOUT.rowHeight + 14} style={{ fontSize: 7.5 }}>
-                {player2}
-              </Text>
+              </PdfText>
 
-              <Line
+              <PdfText
+                x={x + 5}
+                y={y + PDF_LAYOUT.rowHeight + 14}
+                style={{ fontSize: 7.5 }}
+              >
+                {player2}
+              </PdfText>
+
+              <PdfLine
                 x1={x + PDF_LAYOUT.cardWidth}
                 y1={centerY}
                 x2={circleCx - PDF_LAYOUT.circleRadius}
@@ -196,7 +241,7 @@ function PdfBracketPanel(props: {
                 strokeWidth={1}
               />
 
-              <Circle
+              <PdfCircle
                 cx={circleCx}
                 cy={circleCy}
                 r={PDF_LAYOUT.circleRadius}
@@ -204,17 +249,18 @@ function PdfBracketPanel(props: {
                 fill="#fff"
                 strokeWidth={1}
               />
-              <Text
+
+              <PdfText
                 x={circleCx - 3.5}
                 y={circleCy + 3}
-                style={{ fontSize: 7, color }}
+                style={{ fontSize: 7, fill: color }}
               >
                 {String(match.match_no)}
-              </Text>
+              </PdfText>
 
-              {showJoin && nextCenterY !== null && nextCardLeft !== null && (
-                <>
-                  <Line
+              {showJoin && nextCenterY !== null && nextCardLeft !== null ? (
+                <PdfG>
+                  <PdfLine
                     x1={circleCx + PDF_LAYOUT.circleRadius}
                     y1={centerY}
                     x2={joinX}
@@ -222,7 +268,7 @@ function PdfBracketPanel(props: {
                     stroke="#222"
                     strokeWidth={1}
                   />
-                  <Line
+                  <PdfLine
                     x1={joinX}
                     y1={Math.min(centerY, nextCenterY)}
                     x2={joinX}
@@ -230,7 +276,7 @@ function PdfBracketPanel(props: {
                     stroke="#222"
                     strokeWidth={1}
                   />
-                  <Line
+                  <PdfLine
                     x1={joinX}
                     y1={nextCenterY}
                     x2={nextCardLeft}
@@ -238,20 +284,29 @@ function PdfBracketPanel(props: {
                     stroke="#222"
                     strokeWidth={1}
                   />
-                </>
-              )}
+                </PdfG>
+              ) : null}
 
-              <Text x={x} y={y + PDF_LAYOUT.cardHeight + 10} style={{ fontSize: 6.5 }}>
+              <PdfText
+                x={x}
+                y={y + PDF_LAYOUT.cardHeight + 10}
+                style={{ fontSize: 6.5 }}
+              >
                 {`台: ${match.table_no ?? "-"} / 状態: ${match.status ?? "-"}`}
-              </Text>
-              <Text x={x} y={y + PDF_LAYOUT.cardHeight + 18} style={{ fontSize: 6.5 }}>
+              </PdfText>
+
+              <PdfText
+                x={x}
+                y={y + PDF_LAYOUT.cardHeight + 18}
+                style={{ fontSize: 6.5 }}
+              >
                 {`スコア: ${match.score_text ?? "-"}`}
-              </Text>
-            </View>
+              </PdfText>
+            </PdfG>
           );
         })}
-      </Svg>
-    </View>
+      </PdfSvg>
+    </PdfView>
   );
 }
 
@@ -264,59 +319,57 @@ function bracketLabel(bracketType: string) {
   return bracketType;
 }
 
-export function LeagueKnockoutPdfDocument(props: {
-  tournamentName: string;
-  divisionName: string;
-  targetBrackets: Array<{ id: string; bracket_type: string }>;
-  matchesByBracket: Map<string, PdfBracketMatch[]>;
-  entryLabelMap: Record<string, string>;
-  placeholderLabelMap?: Record<string, string>;
-}) {
-  const {
-    tournamentName,
-    divisionName,
-    targetBrackets,
-    matchesByBracket,
-    entryLabelMap,
-    placeholderLabelMap,
-  } = props;
-
+export function LeagueKnockoutPdfDocument({
+  tournamentName,
+  divisionName,
+  targetBrackets,
+  matchesByBracket,
+  entryLabelMap,
+  placeholderLabelMap,
+}: LeagueKnockoutPdfDocumentProps) {
   return (
-    <Document>
+    <PdfDocument>
       {targetBrackets.flatMap((bracket) => {
         const bracketMatches = matchesByBracket.get(bracket.id) ?? [];
         const pages = buildBracketPages(bracketMatches, 16, 2);
         const label = bracketLabel(String(bracket.bracket_type));
 
         return pages.map((page) => (
-          <Page
+          <PdfPage
             key={`${bracket.id}-${page.pageNo}`}
             size="A4"
             orientation="landscape"
             style={styles.page}
           >
-            <Text style={styles.tournament}>{tournamentName || "-"}</Text>
-            <Text style={styles.title}>
-              {`${divisionName} ${label}${pages.length > 1 ? `（${page.pageNo}/${pages.length}）` : ""}`}
-            </Text>
+            <PdfText style={styles.tournament}>{tournamentName || "-"}</PdfText>
 
-            <View style={page.segments.length === 2 ? styles.grid2 : styles.grid1}>
-              {page.segments.map((segment) => (
-                <PdfBracketPanel
+            <PdfText style={styles.title}>
+              {`${divisionName} ${label}${
+                pages.length > 1 ? `（${page.pageNo}/${pages.length}）` : ""
+              }`}
+            </PdfText>
+
+            <PdfView style={page.segments.length === 2 ? styles.grid2 : styles.grid1}>
+              {page.segments.map((segment, index) => (
+                <PdfView
                   key={`${page.pageNo}-${segment.segmentStart}`}
-                  title={label}
-                  segmentTitle={`${segment.segmentStart}〜${segment.segmentEnd}枠`}
-                  matches={segment.matches}
-                  baseRoundNo={segment.baseRoundNo}
-                  segmentStart={segment.segmentStart}
-                  entryLabelMap={entryLabelMap}
-                  placeholderLabelMap={placeholderLabelMap}
-                />
+                  style={index === 0 && page.segments.length === 2 ? styles.panelLeft : undefined}
+                >
+                  <PdfBracketPanel
+                    title={label}
+                    segmentTitle={`${segment.segmentStart}〜${segment.segmentEnd}枠`}
+                    matches={segment.matches}
+                    baseRoundNo={segment.baseRoundNo}
+                    segmentStart={segment.segmentStart}
+                    entryLabelMap={entryLabelMap}
+                    placeholderLabelMap={placeholderLabelMap}
+                  />
+                </PdfView>
               ))}
-            </View>
-          </Page>
+            </PdfView>
+          </PdfPage>
         ));
       })}
-    </Document>
+    </PdfDocument>
   );
 }

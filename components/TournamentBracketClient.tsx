@@ -1,36 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import { useRouter } from "next/navigation";
 import { buildBracketPages } from "@/lib/brackets/paginate";
 import BracketSvg from "@/components/BracketSvg";
 
-type BracketMatch = {
-  id: string;
-  bracket_id: string;
-  round_no: number;
-  match_no: number;
-  status: string | null;
-  table_no: string | null;
-  score_text: string | null;
-  game_scores: Array<{ p1: number | null; p2: number | null }> | null;
-  player1_entry_id: string | null;
-  player2_entry_id: string | null;
-  winner_entry_id: string | null;
-  next_match_id?: string | null;
-  next_slot?: number | null;
-  source_group_id_1?: string | null;
-  source_rank_1?: number | null;
-  source_group_id_2?: string | null;
-  source_rank_2?: number | null;
-};
+type SvgMatch = ComponentProps<typeof BracketSvg>["matches"][number];
+type SvgOnMatchClick = NonNullable<ComponentProps<typeof BracketSvg>["onMatchClick"]>;
+type ClickedMatch = Parameters<SvgOnMatchClick>[0];
 
 type Props = {
   tournamentId: string;
   divisionId: string;
   bracketType: string;
   title: string;
-  matches: BracketMatch[];
+  matches: SvgMatch[];
   entryLabelMap: Record<string, string>;
   placeholderLabelMap?: Record<string, string>;
 };
@@ -46,8 +30,8 @@ function buildSourceKey(groupId?: string | null, rank?: number | null) {
 }
 
 function getDisplayName(params: {
-  entryId: string | null;
-  otherEntryId: string | null;
+  entryId: string | null | undefined;
+  otherEntryId: string | null | undefined;
   sourceGroupId?: string | null;
   sourceRank?: number | null;
   entryLabelMap: Record<string, string>;
@@ -156,7 +140,7 @@ export default function TournamentBracketClient({
   const parsedScores = useMemo(() => parseGameScores(gameInputs), [gameInputs]);
   const gameWins = useMemo(() => countGamesWon(parsedScores), [parsedScores]);
 
-  function openMatch(match: BracketMatch) {
+  function openMatch(match: ClickedMatch) {
     setSelectedMatchId(match.id);
     setErrorMessage("");
     setTableNo(match.table_no ?? "");
@@ -265,7 +249,9 @@ export default function TournamentBracketClient({
       closeModal();
       router.refresh();
     } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "更新に失敗しました。");
+      setErrorMessage(
+        error instanceof Error ? error.message : "更新に失敗しました。"
+      );
     } finally {
       setSaving(false);
     }

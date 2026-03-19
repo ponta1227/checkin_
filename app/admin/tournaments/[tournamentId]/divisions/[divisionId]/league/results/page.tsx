@@ -1,114 +1,134 @@
-import Link from "next/link";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import LeagueResultsClient from "./LeagueResultsClient";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  params: Promise<{ tournamentId: string; divisionId: string }>;
+  params: Promise<{
+    tournamentId: string;
+    divisionId: string;
+  }>;
 };
 
-export default async function DivisionLeagueResultsPage({ params }: PageProps) {
+type EntryRow = {
+  id: string;
+  players: {
+    id: string;
+    name: string | null;
+    affiliation: string | null;
+  } | null;
+};
+
+export default async function Page({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
-  const { data: tournament } = await supabase
-    .from("tournaments")
-    .select("id, name")
-    .eq("id", tournamentId)
-    .single();
+  const [
+    tournamentRes,
+    divisionRes,
+    entriesRes,
+    groupsRes,
+    membersRes,
+    matchesRes,
+  ] = await Promise.all([
+    supabase
+      .from("tournaments")
+      .select("id, name")
+      .eq("id", tournamentId)
+      .single(),
 
-  const { data: division } = await supabase
-    .from("divisions")
-    .select("id, name, format")
-    .eq("id", divisionId)
-    .single();
+    supabase
+      .from("divisions")
+      .select("id, name")
+      .eq("id", divisionId)
+      .single(),
 
-  if (!tournament || !division) {
-    return (
-      <main style={{ padding: "24px" }}>
-        <h1>リーグ結果入力</h1>
-        <p>大会または種目が見つかりませんでした。</p>
-      </main>
-    );
-  }
-
-  const { data: entriesData } = await supabase
-    .from("entries")
-    .select(`
-      id,
-      players (
-        id,
-        name,
-        affiliation
-      )
-    `)
-    .eq("division_id", divisionId)
-    .eq("status", "entered");
-
-  const { data: groupsData } = await supabase
-    .from("league_groups")
-    .select("id, group_no, name, table_numbers, results_confirmed, results_confirmed_at, rating_applied")
-    .eq("division_id", divisionId)
-    .order("group_no", { ascending: true });
-
-  const groups = groupsData ?? [];
-  const groupIds = groups.map((group: any) => group.id);
-
-  let membersData: any[] = [];
-  let matchesData: any[] = [];
-
-  if (groupIds.length > 0) {
-    const { data: fetchedMembers } = await supabase
-      .from("league_group_members")
-      .select("id, group_id, entry_id, slot_no")
-      .in("group_id", groupIds)
-      .order("slot_no", { ascending: true });
-
-    const { data: fetchedMatches } = await supabase
-      .from("league_matches")
+    supabase
+      .from("entries")
       .select(`
         id,
-        group_id,
-        round_no,
-        slot_no,
-        match_no,
-        table_no,
-        player1_entry_id,
-        player2_entry_id,
-        referee_entry_id,
-        winner_entry_id,
-        score_text,
-        game_scores,
-        status
+        players (
+          id,
+          name,
+          affiliation
+        )
       `)
-      .in("group_id", groupIds)
-      .order("round_no", { ascending: true })
-      .order("slot_no", { ascending: true })
-      .order("match_no", { ascending: true });
+      .eq("division_id", divisionId),
 
-    membersData = fetchedMembers ?? [];
-    matchesData = fetchedMatches ?? [];
+    supabase
+      .from("league_groups")
+      .select("*")
+      .eq("division_id", divisionId)
+      .order("group_no", { ascending: true }),
+
+    supabase
+      .from("league_group_members")
+      .select("*")
+      .eq("division_id", divisionId)
+      .order("group_id", { ascending: true })
+      .order("slot_no", { ascending: true }),
+
+    supabase
+      .from("matches")
+      .select("*")
+      .eq("division_id", divisionId)
+      .eq("stage", "league")
+      .order("group_id", { ascending: true })
+      .order("match_no", { ascending: true }),
+  ]);
+
+  if (tournamentRes.error) {
+    throw new Error(tournamentRes.error.message);
+  }
+  if (divisionRes.error) {
+    throw new Error(divisionRes.error.message);
+  }
+  if (entriesRes.error) {
+    throw new Error(entriesRes.error.message);
+  }
+  if (groupsRes.error) {
+    throw new Error(groupsRes.error.message);
+  }
+  if (membersRes.error) {
+    throw new Error(membersRes.error.message);
+  }
+  if (matchesRes.error) {
+    throw new Error(matchesRes.error.message);
   }
 
-  return (
-    <main style={{ padding: "24px" }}>
-      <div style={{ marginBottom: "24px" }}>
-        <Link href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/league`}>
-          ← リーグ管理へ戻る
-        </Link>
-      </div>
+  const tournament = tournamentRes.data;
+  const division = divisionRes.data;
 
-      <LeagueResultsClient
-        tournamentId={tournamentId}
-        divisionId={divisionId}
-        tournamentName={tournament.name}
-        divisionName={division.name}
-        entries={entriesData ?? []}
-        groups={groups}
-        members={membersData}
-        matches={matchesData}
-      />
-    </main>
+  const entriesData = (entriesRes.data ?? []) as Array<{
+    id: string;
+    players:
+      | Array<{
+          id: string;
+          name: string | null;
+          affiliation: string | null;
+        }>
+      | null;
+  }>;
+
+  const normalizedEntries: EntryRow[] = entriesData.map((entry) => ({
+    id: entry.id,
+    players: Array.isArray(entry.players) ? (entry.players[0] ?? null) : null,
+  }));
+
+  const groups = groupsRes.data ?? [];
+  const membersData = membersRes.data ?? [];
+  const matchesData = matchesRes.data ?? [];
+
+  return (
+    <LeagueResultsClient
+      tournamentId={tournamentId}
+      divisionId={divisionId}
+      tournamentName={tournament.name}
+      divisionName={division.name}
+      entries={normalizedEntries}
+      groups={groups}
+      members={membersData}
+      matches={matchesData}
+    />
   );
 }

@@ -1,34 +1,135 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { normalizeDivisionFormat } from "@/lib/divisions/format";
-import TournamentBracketClient from "@/components/TournamentBracketClient";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  params: Promise<{ tournamentId: string; divisionId: string }>;
+  params: Promise<{
+    tournamentId: string;
+    divisionId: string;
+  }>;
 };
 
-function getBracketTitle(bracketType: string) {
-  if (bracketType === "upper") return "上位トーナメント";
-  if (bracketType === "lower") return "下位トーナメント";
-  if (/^rank_\d+$/.test(bracketType)) {
-    return `${bracketType.replace("rank_", "")}位トーナメント`;
-  }
-  return bracketType;
+type EntryRow = {
+  id: string;
+  entry_name: string | null;
+  entry_affiliation: string | null;
+  status: string | null;
+  seed: number | null;
+  entry_rating: number | null;
+  ranking_for_draw: number | null;
+  players:
+    | Array<{
+        id: string;
+        name: string | null;
+        affiliation: string | null;
+      }>
+    | null;
+  checkins:
+    | Array<{
+        status: string | null;
+      }>
+    | null;
+};
+
+function isCheckedIn(entry: EntryRow) {
+  return entry.checkins?.[0]?.status === "checked_in";
+}
+
+function getFirstPlayer(entry: EntryRow) {
+  return Array.isArray(entry.players) ? (entry.players[0] ?? null) : null;
+}
+
+function buildTeamLabel(entry: EntryRow) {
+  const player = getFirstPlayer(entry);
+
+  const teamName = entry.entry_name ?? player?.name ?? "-";
+  const affiliation = entry.entry_affiliation ?? player?.affiliation ?? "-";
+
+  return {
+    teamName,
+    affiliation,
+  };
+}
+
+function sortEntries(entries: EntryRow[]) {
+  return [...entries].sort((a, b) => {
+    const drawA = a.ranking_for_draw ?? Number.MAX_SAFE_INTEGER;
+    const drawB = b.ranking_for_draw ?? Number.MAX_SAFE_INTEGER;
+    if (drawA !== drawB) return drawA - drawB;
+
+    const seedA = a.seed ?? Number.MAX_SAFE_INTEGER;
+    const seedB = b.seed ?? Number.MAX_SAFE_INTEGER;
+    if (seedA !== seedB) return seedA - seedB;
+
+    const ratingA = a.entry_rating ?? Number.NEGATIVE_INFINITY;
+    const ratingB = b.entry_rating ?? Number.NEGATIVE_INFINITY;
+    if (ratingA !== ratingB) return ratingB - ratingA;
+
+    const playerA = getFirstPlayer(a);
+    const playerB = getFirstPlayer(b);
+
+    const nameA = a.entry_name ?? playerA?.name ?? "";
+    const nameB = b.entry_name ?? playerB?.name ?? "";
+    return nameA.localeCompare(nameB, "ja");
+  });
 }
 
 export default async function LeagueKnockoutPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
-  const { data: division } = await supabase
+  const { data: tournament, error: tournamentError } = await supabase
+    .from("tournaments")
+    .select("id, name")
+    .eq("id", tournamentId)
+    .single();
+
+  if (tournamentError) {
+    return (
+      <main style={{ padding: "24px" }}>
+        <p>大会情報の取得に失敗しました: {tournamentError.message}</p>
+      </main>
+    );
+  }
+
+  const { data: division, error: divisionError } = await supabase
     .from("divisions")
-    .select("id, name, format")
+    .select("id, name, event_type, format")
     .eq("id", divisionId)
     .single();
 
-  if (!division || normalizeDivisionFormat(division.format) !== "league_then_knockout") {
+  if (divisionError || !division) {
+    return (
+      <main style={{ padding: "24px" }}>
+        <p>種目情報の取得に失敗しました: {divisionError?.message ?? "not found"}</p>
+      </main>
+    );
+  }
+
+  const { data: rawEntriesData, error: entriesError } = await supabase
+    .from("entries")
+    .select(`
+      id,
+      entry_name,
+      entry_affiliation,
+      status,
+      seed,
+      entry_rating,
+      ranking_for_draw,
+      players (
+        id,
+        name,
+        affiliation
+      ),
+      checkins (
+        status
+      )
+    `)
+    .eq("division_id", divisionId)
+    .eq("status", "entered");
+
+  if (entriesError) {
     return (
       <main style={{ padding: "24px" }}>
         <div style={{ marginBottom: "24px" }}>
@@ -36,188 +137,113 @@ export default async function LeagueKnockoutPage({ params }: PageProps) {
             ← 種目管理へ戻る
           </Link>
         </div>
-        <p>この種目はリーグ→トーナメント形式ではありません。</p>
+        <p>エントリー取得に失敗しました: {entriesError.message}</p>
       </main>
     );
   }
 
-  const { data: entriesData } = await supabase
-    .from("entries")
-    .select(`
-      id,
-      entry_name,
-      entry_affiliation,
-      players (
-        id,
-        name,
-        affiliation
-      )
-    `)
-    .eq("division_id", divisionId)
-    .eq("status", "entered");
-
-  const entryLabelMap: Record<string, string> = {};
-  for (const entry of entriesData ?? []) {
-    const teamName =
-      entry.entry_name ??
-      entry.players?.name ??
-      "-";
-
-    const affiliation =
-      entry.entry_affiliation ??
-      entry.players?.affiliation ??
-      "";
-
-    entryLabelMap[entry.id] = affiliation ? `${teamName}（${affiliation}）` : teamName;
-  }
-
-  const { data: groupsData } = await supabase
-    .from("league_groups")
-    .select("id, group_no, name")
-    .eq("division_id", divisionId)
-    .order("group_no", { ascending: true });
-
-  const groups = groupsData ?? [];
-  const groupIds = groups.map((g) => g.id);
-
-  const placeholderLabelMap: Record<string, string> = {};
-
-  if (groupIds.length > 0) {
-    const { data: membersData } = await supabase
-      .from("league_group_members")
-      .select("id, group_id, entry_id, slot_no")
-      .in("group_id", groupIds)
-      .order("slot_no", { ascending: true });
-
-    const memberCountByGroup = new Map<string, number>();
-    for (const member of membersData ?? []) {
-      memberCountByGroup.set(
-        member.group_id,
-        (memberCountByGroup.get(member.group_id) ?? 0) + 1
-      );
-    }
-
-    for (const group of groups) {
-      const count = memberCountByGroup.get(group.id) ?? 0;
-      for (let rank = 1; rank <= count; rank += 1) {
-        placeholderLabelMap[`${group.id}:${rank}`] = `${group.group_no}リーグの${rank}位`;
-      }
-    }
-  }
-
-  const { data: brackets } = await supabase
-    .from("brackets")
-    .select("id, bracket_type")
-    .eq("division_id", divisionId);
-
-  const targetBrackets = [...(brackets ?? [])]
-    .filter((b) => {
-      const type = String(b.bracket_type ?? "");
-      return type === "upper" || type === "lower" || /^rank_\d+$/.test(type);
-    })
-    .sort((a, b) => {
-      const aType = String(a.bracket_type);
-      const bType = String(b.bracket_type);
-
-      if (aType === "upper") return -1;
-      if (bType === "upper") return 1;
-      if (aType === "lower") return -1;
-      if (bType === "lower") return 1;
-
-      const aRank = Number(aType.replace("rank_", ""));
-      const bRank = Number(bType.replace("rank_", ""));
-      return aRank - bRank;
-    });
-
-  const bracketIds = targetBrackets.map((b) => b.id);
-
-  const { data: matchesData } =
-    bracketIds.length > 0
-      ? await supabase
-          .from("matches")
-          .select(`
-            id,
-            bracket_id,
-            round_no,
-            match_no,
-            status,
-            table_no,
-            score_text,
-            game_scores,
-            player1_entry_id,
-            player2_entry_id,
-            winner_entry_id,
-            next_match_id,
-            next_slot,
-            source_group_id_1,
-            source_rank_1,
-            source_group_id_2,
-            source_rank_2
-          `)
-          .in("bracket_id", bracketIds)
-          .neq("status", "skipped")
-          .order("round_no", { ascending: true })
-          .order("match_no", { ascending: true })
-      : { data: [] as any[] };
-
-  const matchesByBracket = new Map<string, any[]>();
-  for (const match of matchesData ?? []) {
-    if (!matchesByBracket.has(match.bracket_id)) {
-      matchesByBracket.set(match.bracket_id, []);
-    }
-    matchesByBracket.get(match.bracket_id)!.push(match);
-  }
+  const allEntries = (rawEntriesData ?? []) as EntryRow[];
+  const checkedInEntries = sortEntries(allEntries.filter((entry) => isCheckedIn(entry)));
+  const allSortedEntries = sortEntries(allEntries);
 
   return (
-    <main style={{ padding: "24px", maxWidth: "1600px" }}>
+    <main style={{ padding: "24px", maxWidth: "1100px" }}>
       <div style={{ marginBottom: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
         <Link
           href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}`}
-          style={topLinkStyle()}
+          style={linkButtonStyle()}
         >
           種目管理へ
         </Link>
         <Link
-          href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/league`}
-          style={topLinkStyle()}
+          href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`}
+          style={linkButtonStyle()}
         >
-          予選リーグへ
+          試合一覧へ
         </Link>
       </div>
 
-      <h1 style={{ marginBottom: "8px" }}>順位別トーナメント</h1>
+      <h1 style={{ marginBottom: "8px" }}>リーグ→トーナメント設定確認</h1>
       <p style={{ marginTop: 0, color: "#555", marginBottom: "20px" }}>
-        種目: {division.name}
+        大会: {tournament?.name ?? "-"} / 種目: {division.name}
       </p>
 
-      {targetBrackets.length === 0 ? (
-        <p>順位別トーナメントはまだ生成されていません。</p>
-      ) : (
-        <div style={{ display: "grid", gap: "28px" }}>
-          {targetBrackets.map((bracket) => (
-            <section key={bracket.id} style={{ display: "grid", gap: "12px" }}>
-              <h2 style={{ margin: 0, fontSize: "20px" }}>
-                {getBracketTitle(String(bracket.bracket_type))}
-              </h2>
+      <section style={cardStyle}>
+        <h2 style={sectionTitleStyle}>受付済みチーム</h2>
+        {checkedInEntries.length === 0 ? (
+          <p style={{ margin: 0 }}>受付済みチームはありません。</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle()}>チーム名</th>
+                <th style={thStyle()}>所属</th>
+                <th style={thStyleCenter()}>seed</th>
+                <th style={thStyleCenter()}>draw順</th>
+                <th style={thStyleCenter()}>rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedInEntries.map((entry) => {
+                const { teamName, affiliation } = buildTeamLabel(entry);
 
-              <TournamentBracketClient
-                tournamentId={tournamentId}
-                divisionId={divisionId}
-                bracketType={String(bracket.bracket_type)}
-                title={getBracketTitle(String(bracket.bracket_type))}
-                matches={matchesByBracket.get(bracket.id) ?? []}
-                entryLabelMap={entryLabelMap}
-                placeholderLabelMap={placeholderLabelMap}
-              />
-            </section>
-          ))}
-        </div>
-      )}
+                return (
+                  <tr key={entry.id}>
+                    <td style={tdStyle()}>{teamName}</td>
+                    <td style={tdStyle()}>{affiliation}</td>
+                    <td style={tdStyleCenter()}>{entry.seed ?? "-"}</td>
+                    <td style={tdStyleCenter()}>{entry.ranking_for_draw ?? "-"}</td>
+                    <td style={tdStyleCenter()}>{entry.entry_rating ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section style={{ ...cardStyle, marginTop: "20px" }}>
+        <h2 style={sectionTitleStyle}>全エントリー</h2>
+        {allSortedEntries.length === 0 ? (
+          <p style={{ margin: 0 }}>エントリーがありません。</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle()}>チーム名</th>
+                <th style={thStyle()}>所属</th>
+                <th style={thStyleCenter()}>受付</th>
+                <th style={thStyleCenter()}>seed</th>
+                <th style={thStyleCenter()}>draw順</th>
+                <th style={thStyleCenter()}>rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allSortedEntries.map((entry) => {
+                const { teamName, affiliation } = buildTeamLabel(entry);
+
+                return (
+                  <tr key={entry.id}>
+                    <td style={tdStyle()}>{teamName}</td>
+                    <td style={tdStyle()}>{affiliation}</td>
+                    <td style={tdStyleCenter()}>
+                      {isCheckedIn(entry) ? "受付済み" : "-"}
+                    </td>
+                    <td style={tdStyleCenter()}>{entry.seed ?? "-"}</td>
+                    <td style={tdStyleCenter()}>{entry.ranking_for_draw ?? "-"}</td>
+                    <td style={tdStyleCenter()}>{entry.entry_rating ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
     </main>
   );
 }
 
-function topLinkStyle(): React.CSSProperties {
+function linkButtonStyle(): React.CSSProperties {
   return {
     display: "inline-block",
     padding: "10px 14px",
@@ -226,5 +252,62 @@ function topLinkStyle(): React.CSSProperties {
     background: "white",
     color: "inherit",
     textDecoration: "none",
+  };
+}
+
+const cardStyle: React.CSSProperties = {
+  border: "1px solid #ddd",
+  borderRadius: "10px",
+  padding: "16px",
+  background: "white",
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+  marginTop: 0,
+  marginBottom: "12px",
+  fontSize: "18px",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: "14px",
+};
+
+function thStyle(): React.CSSProperties {
+  return {
+    padding: "12px",
+    borderBottom: "1px solid #eee",
+    textAlign: "left",
+    background: "#fafafa",
+  };
+}
+
+function thStyleCenter(): React.CSSProperties {
+  return {
+    padding: "12px",
+    borderBottom: "1px solid #eee",
+    textAlign: "center",
+    background: "#fafafa",
+    whiteSpace: "nowrap",
+  };
+}
+
+function tdStyle(): React.CSSProperties {
+  return {
+    padding: "12px",
+    borderBottom: "1px solid #f0f0f0",
+    textAlign: "left",
+    verticalAlign: "top",
+  };
+}
+
+function tdStyleCenter(): React.CSSProperties {
+  return {
+    padding: "12px",
+    borderBottom: "1px solid #f0f0f0",
+    textAlign: "center",
+    verticalAlign: "top",
+    whiteSpace: "nowrap",
   };
 }

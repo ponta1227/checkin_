@@ -1,11 +1,74 @@
 import { NextResponse } from "next/server";
+import { renderToStream } from "@react-pdf/renderer";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeDivisionFormat } from "@/lib/divisions/format";
-import { pdf } from "@react-pdf/renderer";
 import {
   LeagueKnockoutPdfDocument,
   type PdfBracketMatch,
 } from "@/lib/brackets/leagueKnockoutPdfDocument";
+
+export const runtime = "nodejs";
+
+type EntryPlayerRow = {
+  id: string;
+  name: string | null;
+  affiliation: string | null;
+};
+
+type EntryRow = {
+  id: string;
+  entry_name: string | null;
+  players: EntryPlayerRow[] | null;
+};
+
+function buildEntryLabel(entry: EntryRow): string {
+  if (entry.entry_name && entry.entry_name.trim() !== "") {
+    return entry.entry_name;
+  }
+
+  if (!Array.isArray(entry.players) || entry.players.length === 0) {
+    return "-";
+  }
+
+  const labels = entry.players
+    .map((player) => {
+      const name = player.name?.trim() || "-";
+      const affiliation =
+        player.affiliation && player.affiliation.trim() !== ""
+          ? `（${player.affiliation}）`
+          : "";
+      return `${name}${affiliation}`;
+    })
+    .filter((label) => label.trim() !== "");
+
+  return labels.length > 0 ? labels.join(" / ") : "-";
+}
+
+async function readNodeStreamToBuffer(
+  stream: NodeJS.ReadableStream
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array | string>) {
+    if (typeof chunk === "string") {
+      chunks.push(Buffer.from(chunk));
+    } else if (chunk instanceof Uint8Array) {
+      chunks.push(Buffer.from(chunk));
+    } else {
+      chunks.push(chunk);
+    }
+  }
+
+  return Buffer.concat(chunks);
+}
+
+function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const uint8 = new Uint8Array(buffer);
+  return uint8.buffer.slice(
+    uint8.byteOffset,
+    uint8.byteOffset + uint8.byteLength
+  ) as ArrayBuffer;
+}
 
 export async function GET(
   _request: Request,
@@ -20,10 +83,15 @@ export async function GET(
     .eq("id", divisionId)
     .single();
 
-  if (!division || normalizeDivisionFormat(division.format) !== "league_then_knockout") {
-    return new NextResponse("この種目はリーグ→トーナメント形式ではありません。", {
-      status: 400,
-    });
+  const divisionFormat = String(normalizeDivisionFormat(division?.format) ?? "");
+
+  if (!division || divisionFormat !== "league_then_knockout") {
+    return new NextResponse(
+      "この種目はリーグ→トーナメント形式ではありません。",
+      {
+        status: 400,
+      }
+    );
   }
 
   const { data: tournament } = await supabase
@@ -39,12 +107,13 @@ export async function GET(
     .order("group_no", { ascending: true });
 
   const groups = groupsData ?? [];
-  const groupIds = groups.map((g) => g.id);
+  const groupIds = groups.map((g) => String(g.id));
 
   const { data: entriesData } = await supabase
     .from("entries")
     .select(`
       id,
+      entry_name,
       players (
         id,
         name,
@@ -55,12 +124,8 @@ export async function GET(
     .eq("status", "entered");
 
   const entryLabelMap: Record<string, string> = {};
-  for (const entry of entriesData ?? []) {
-    const name = entry.players?.name ?? "-";
-    const affiliation = entry.players?.affiliation
-      ? `（${entry.players.affiliation}）`
-      : "";
-    entryLabelMap[entry.id] = `${name}${affiliation}`;
+  for (const entry of (entriesData ?? []) as EntryRow[]) {
+    entryLabelMap[String(entry.id)] = buildEntryLabel(entry);
   }
 
   const placeholderLabelMap: Record<string, string> = {};
@@ -74,16 +139,19 @@ export async function GET(
 
     const memberCountByGroup = new Map<string, number>();
     for (const member of membersData ?? []) {
+      const groupId = String(member.group_id);
       memberCountByGroup.set(
-        member.group_id,
-        (memberCountByGroup.get(member.group_id) ?? 0) + 1
+        groupId,
+        (memberCountByGroup.get(groupId) ?? 0) + 1
       );
     }
 
     for (const group of groups) {
-      const count = memberCountByGroup.get(group.id) ?? 0;
+      const groupId = String(group.id);
+      const count = memberCountByGroup.get(groupId) ?? 0;
       for (let rank = 1; rank <= count; rank += 1) {
-        placeholderLabelMap[`${group.id}:${rank}`] = `${group.group_no}リーグ${rank}位`;
+        placeholderLabelMap[`${groupId}:${rank}`] =
+          `${group.group_no}リーグ${rank}位`;
       }
     }
   }
@@ -99,20 +167,20 @@ export async function GET(
       return type === "upper" || type === "lower" || /^rank_\d+$/.test(type);
     })
     .sort((a, b) => {
-      const aType = String(a.bracket_type);
-      const bType = String(b.bracket_type);
+      const aType = String(a.bracket_type ?? "");
+      const bType = String(b.bracket_type ?? "");
 
-      if (aType === "upper") return -1;
-      if (bType === "upper") return 1;
-      if (aType === "lower") return -1;
-      if (bType === "lower") return 1;
+      if (aType === "upper" && bType !== "upper") return -1;
+      if (aType !== "upper" && bType === "upper") return 1;
+      if (aType === "lower" && bType !== "lower") return -1;
+      if (aType !== "lower" && bType === "lower") return 1;
 
       const aRank = Number(aType.replace("rank_", ""));
       const bRank = Number(bType.replace("rank_", ""));
       return aRank - bRank;
     });
 
-  const bracketIds = targetBrackets.map((b) => b.id);
+  const bracketIds = targetBrackets.map((b) => String(b.id));
 
   let matches: PdfBracketMatch[] = [];
   if (bracketIds.length > 0) {
@@ -144,32 +212,35 @@ export async function GET(
 
   const matchesByBracket = new Map<string, PdfBracketMatch[]>();
   for (const match of matches) {
-    if (!matchesByBracket.has(match.bracket_id)) {
-      matchesByBracket.set(match.bracket_id, []);
+    const bracketId = String(match.bracket_id);
+    if (!matchesByBracket.has(bracketId)) {
+      matchesByBracket.set(bracketId, []);
     }
-    matchesByBracket.get(match.bracket_id)!.push(match);
+    matchesByBracket.get(bracketId)!.push(match);
   }
 
   const doc = LeagueKnockoutPdfDocument({
     tournamentName: tournament?.name ?? "-",
-    divisionName: division.name,
+    divisionName: division.name ?? "-",
     targetBrackets: targetBrackets.map((b) => ({
-      id: b.id,
-      bracket_type: String(b.bracket_type),
+      id: String(b.id),
+      bracket_type: String(b.bracket_type ?? ""),
     })),
     matchesByBracket,
     entryLabelMap,
     placeholderLabelMap,
   });
 
-  const buffer = await pdf(doc).toBuffer();
+  const stream = await renderToStream(doc);
+  const pdfBuffer = await readNodeStreamToBuffer(stream);
+  const pdfArrayBuffer = bufferToArrayBuffer(pdfBuffer);
 
-  return new NextResponse(buffer as BodyInit, {
+  return new NextResponse(pdfArrayBuffer, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(
-        `${division.name}_順位別トーナメント表.pdf`
+        `${division.name ?? "順位別トーナメント"}_順位別トーナメント表.pdf`
       )}`,
     },
   });

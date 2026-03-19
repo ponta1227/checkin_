@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import TeamLeagueBoardClient from "@/components/TeamLeagueBoardClient";
 import { buildTeamLeagueStandings } from "@/lib/team/buildStandings";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +8,39 @@ type PageProps = {
   params: Promise<{ tournamentId: string; divisionId: string }>;
 };
 
+type TeamRow = {
+  entryId: string;
+  teamName: string;
+  affiliation: string | null;
+};
+
+type CellRow = {
+  matchId: string;
+  rowEntryId: string;
+  colEntryId: string;
+  status: string | null;
+  scoreText: string | null;
+};
+
+type StandingRow = {
+  entryId: string;
+  teamName: string;
+  teamAffiliation: string | null;
+  played: number;
+  wins: number;
+  losses: number;
+  teamPointsFor: number;
+  teamPointsAgainst: number;
+  gamePointsFor: number;
+  gamePointsAgainst: number;
+  teamPointDiff: number;
+  gamePointDiff: number;
+  rank: number;
+};
+
 export default async function TeamLeaguePage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")
@@ -79,14 +108,14 @@ export default async function TeamLeaguePage({ params }: PageProps) {
     .is("bracket_id", null)
     .neq("status", "skipped");
 
-  const teams =
+  const teams: TeamRow[] =
     (entries ?? []).map((entry) => ({
       entryId: entry.id,
       teamName: entry.entry_name ?? "-",
       affiliation: entry.entry_affiliation ?? null,
     })) ?? [];
 
-  const cells =
+  const cells: CellRow[] =
     (matches ?? [])
       .filter((m) => m.player1_entry_id && m.player2_entry_id)
       .map((m) => ({
@@ -113,6 +142,24 @@ export default async function TeamLeaguePage({ params }: PageProps) {
         score_text: m.score_text,
         status: m.status,
       })) ?? [],
+  }) as StandingRow[];
+
+  const cellMap = new Map<string, CellRow>();
+  for (const cell of cells) {
+    cellMap.set(`${cell.rowEntryId}:${cell.colEntryId}`, cell);
+    cellMap.set(`${cell.colEntryId}:${cell.rowEntryId}`, {
+      ...cell,
+      rowEntryId: cell.colEntryId,
+      colEntryId: cell.rowEntryId,
+    });
+  }
+
+  const standingMap = new Map<string, StandingRow>();
+  standings.forEach((row, index) => {
+    standingMap.set(row.entryId, {
+      ...row,
+      rank: row.rank ?? index + 1,
+    });
   });
 
   return (
@@ -131,14 +178,113 @@ export default async function TeamLeaguePage({ params }: PageProps) {
       {teams.length === 0 ? (
         <p>チームがありません。</p>
       ) : (
-        <TeamLeagueBoardClient
-          tournamentId={tournamentId}
-          divisionId={divisionId}
-          teams={teams}
-          cells={cells}
-          standings={standings}
-        />
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, minWidth: "48px" }}>No</th>
+                <th style={{ ...thStyle, minWidth: "220px" }}>チーム</th>
+                {teams.map((team, index) => (
+                  <th key={team.entryId} style={{ ...thStyleCenter, minWidth: "72px" }}>
+                    {index + 1}
+                  </th>
+                ))}
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>試合数</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>勝</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>敗</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>得点</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>失点</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>得失差</th>
+                <th style={{ ...thStyleCenter, minWidth: "72px" }}>順位</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {teams.map((team, rowIndex) => {
+                const standing = standingMap.get(team.entryId);
+
+                return (
+                  <tr key={team.entryId}>
+                    <td style={tdStyleCenter}>{rowIndex + 1}</td>
+
+                    <td style={tdStyleLeft}>
+                      <div style={{ fontWeight: 600 }}>{team.teamName}</div>
+                      <div style={{ fontSize: "12px", color: "#666" }}>
+                        {team.affiliation ?? ""}
+                      </div>
+                    </td>
+
+                    {teams.map((opponent) => {
+                      if (team.entryId === opponent.entryId) {
+                        return (
+                          <td
+                            key={opponent.entryId}
+                            style={{
+                              ...tdStyleCenter,
+                              background:
+                                "linear-gradient(to bottom right, transparent 48%, #333 49%, #333 51%, transparent 52%)",
+                            }}
+                          />
+                        );
+                      }
+
+                      const cell = cellMap.get(`${team.entryId}:${opponent.entryId}`);
+
+                      return (
+                        <td key={opponent.entryId} style={tdStyleCenter}>
+                          {cell?.scoreText ?? (cell?.status === "completed" ? "済" : "")}
+                        </td>
+                      );
+                    })}
+
+                    <td style={tdStyleCenter}>{standing?.played ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.wins ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.losses ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.teamPointsFor ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.teamPointsAgainst ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.teamPointDiff ?? "-"}</td>
+                    <td style={tdStyleCenter}>{standing?.rank ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </main>
   );
 }
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  background: "white",
+  fontSize: "14px",
+};
+
+const thStyle: React.CSSProperties = {
+  border: "1px solid #ddd",
+  padding: "10px 8px",
+  background: "#f7f7f7",
+  textAlign: "left",
+  whiteSpace: "nowrap",
+};
+
+const thStyleCenter: React.CSSProperties = {
+  ...thStyle,
+  textAlign: "center",
+};
+
+const tdStyleLeft: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  padding: "10px 8px",
+  textAlign: "left",
+  verticalAlign: "middle",
+};
+
+const tdStyleCenter: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  padding: "10px 8px",
+  textAlign: "center",
+  verticalAlign: "middle",
+};

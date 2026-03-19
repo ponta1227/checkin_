@@ -8,12 +8,45 @@ type PageProps = {
   searchParams: Promise<{ saved?: string }>;
 };
 
+type EntryPlayerRow = {
+  id: string;
+  name: string | null;
+};
+
+type EntryRow = {
+  id: string;
+  players: EntryPlayerRow[] | null;
+};
+
+type MatchRow = {
+  id: string;
+  round_no: number;
+  match_no: number;
+  player1_entry_id: string | null;
+  player2_entry_id: string | null;
+  winner_entry_id: string | null;
+  score_text: string | null;
+  status: string | null;
+};
+
 function getStatusLabel(status: string | null | undefined) {
   if (status === "ready") return "対戦可";
   if (status === "pending") return "未確定";
   if (status === "walkover") return "不戦";
   if (status === "completed") return "完了";
   return "-";
+}
+
+function buildEntryName(entry: EntryRow) {
+  if (!Array.isArray(entry.players) || entry.players.length === 0) {
+    return "-";
+  }
+
+  const names = entry.players
+    .map((player) => player.name?.trim() || "")
+    .filter((name) => name !== "");
+
+  return names.length > 0 ? names.join(" / ") : "-";
 }
 
 export default async function DivisionResultsPage({
@@ -57,8 +90,8 @@ export default async function DivisionResultsPage({
     .eq("division_id", divisionId);
 
   const entryNameMap = new Map<string, string>();
-  for (const entry of entries ?? []) {
-    entryNameMap.set(entry.id, entry.players?.name ?? "-");
+  for (const rawEntry of (entries ?? []) as EntryRow[]) {
+    entryNameMap.set(String(rawEntry.id), buildEntryName(rawEntry));
   }
 
   const { data: bracket } = await supabase
@@ -93,9 +126,11 @@ export default async function DivisionResultsPage({
     .order("round_no", { ascending: true })
     .order("match_no", { ascending: true });
 
-  const rounds = new Map<number, any[]>();
-  for (const match of matches ?? []) {
-    if (!rounds.has(match.round_no)) rounds.set(match.round_no, []);
+  const rounds = new Map<number, MatchRow[]>();
+  for (const match of (matches ?? []) as MatchRow[]) {
+    if (!rounds.has(match.round_no)) {
+      rounds.set(match.round_no, []);
+    }
     rounds.get(match.round_no)!.push(match);
   }
 
@@ -141,57 +176,124 @@ export default async function DivisionResultsPage({
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "8px" }}>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #ccc",
+                        padding: "8px",
+                      }}
+                    >
                       試合
                     </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "8px" }}>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #ccc",
+                        padding: "8px",
+                      }}
+                    >
                       player1
                     </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "8px" }}>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #ccc",
+                        padding: "8px",
+                      }}
+                    >
                       player2
                     </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "8px" }}>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #ccc",
+                        padding: "8px",
+                      }}
+                    >
                       状態
                     </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "8px" }}>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #ccc",
+                        padding: "8px",
+                      }}
+                    >
                       入力
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {roundMatches.map((match: any) => {
-                    const p1Name = match.player1_entry_id
-                      ? entryNameMap.get(match.player1_entry_id) ?? "-"
-                      : match.player2_entry_id
+                  {roundMatches.map((match) => {
+                    const player1EntryId = match.player1_entry_id
+                      ? String(match.player1_entry_id)
+                      : null;
+                    const player2EntryId = match.player2_entry_id
+                      ? String(match.player2_entry_id)
+                      : null;
+                    const currentWinnerId = match.winner_entry_id
+                      ? String(match.winner_entry_id)
+                      : "";
+
+                    const p1Name = player1EntryId
+                      ? entryNameMap.get(player1EntryId) ?? "-"
+                      : player2EntryId
                       ? "BYE"
                       : "-";
 
-                    const p2Name = match.player2_entry_id
-                      ? entryNameMap.get(match.player2_entry_id) ?? "-"
-                      : match.player1_entry_id
+                    const p2Name = player2EntryId
+                      ? entryNameMap.get(player2EntryId) ?? "-"
+                      : player1EntryId
                       ? "BYE"
                       : "-";
 
-                    const hasBothPlayers =
-                      !!match.player1_entry_id && !!match.player2_entry_id;
-
-                    const currentWinnerId = match.winner_entry_id ?? "";
+                    const hasBothPlayers = !!player1EntryId && !!player2EntryId;
 
                     return (
                       <tr key={match.id}>
-                        <td style={{ borderBottom: "1px solid #eee", padding: "8px", verticalAlign: "top" }}>
+                        <td
+                          style={{
+                            borderBottom: "1px solid #eee",
+                            padding: "8px",
+                            verticalAlign: "top",
+                          }}
+                        >
                           {match.match_no}
                         </td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: "8px", verticalAlign: "top" }}>
+                        <td
+                          style={{
+                            borderBottom: "1px solid #eee",
+                            padding: "8px",
+                            verticalAlign: "top",
+                          }}
+                        >
                           {p1Name}
                         </td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: "8px", verticalAlign: "top" }}>
+                        <td
+                          style={{
+                            borderBottom: "1px solid #eee",
+                            padding: "8px",
+                            verticalAlign: "top",
+                          }}
+                        >
                           {p2Name}
                         </td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: "8px", verticalAlign: "top" }}>
+                        <td
+                          style={{
+                            borderBottom: "1px solid #eee",
+                            padding: "8px",
+                            verticalAlign: "top",
+                          }}
+                        >
                           {getStatusLabel(match.status)}
                         </td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: "8px", verticalAlign: "top" }}>
+                        <td
+                          style={{
+                            borderBottom: "1px solid #eee",
+                            padding: "8px",
+                            verticalAlign: "top",
+                          }}
+                        >
                           {match.status === "walkover" ? (
                             <div>
                               <div>不戦勝で自動決定</div>
@@ -202,7 +304,11 @@ export default async function DivisionResultsPage({
                           ) : !hasBothPlayers ? (
                             <div>対戦者確定待ち</div>
                           ) : (
-                            <form action="/api/matches/report" method="post" style={{ display: "grid", gap: "8px" }}>
+                            <form
+                              action="/api/matches/report"
+                              method="post"
+                              style={{ display: "grid", gap: "8px" }}
+                            >
                               <input type="hidden" name="tournamentId" value={tournamentId} />
                               <input type="hidden" name="divisionId" value={divisionId} />
                               <input type="hidden" name="matchId" value={match.id} />
@@ -218,12 +324,8 @@ export default async function DivisionResultsPage({
                                 }}
                               >
                                 <option value="">勝者を選択</option>
-                                <option value={match.player1_entry_id}>
-                                  {entryNameMap.get(match.player1_entry_id) ?? "-"}
-                                </option>
-                                <option value={match.player2_entry_id}>
-                                  {entryNameMap.get(match.player2_entry_id) ?? "-"}
-                                </option>
+                                <option value={player1EntryId ?? ""}>{p1Name}</option>
+                                <option value={player2EntryId ?? ""}>{p2Name}</option>
                               </select>
 
                               <input

@@ -1,23 +1,31 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type EntryPlayerRow = {
+  id: string;
+  name: string | null;
+  rating: number | null;
+  affiliation: string | null;
+};
+
+type EntryCheckinRow = {
+  status: string | null;
+};
+
 type EntryRow = {
   id: string;
   entry_rating: number | null;
   ranking_for_draw: number | null;
   affiliation_order: number | null;
-  players:
-    | {
-        id: string;
-        name: string | null;
-        rating: number | null;
-        affiliation: string | null;
-      }
-    | null;
-  checkins:
-    | { status: string | null }[]
-    | { status: string | null }
-    | null;
+  players: EntryPlayerRow[];
+  checkins: EntryCheckinRow[];
+};
+
+type LeagueGroupInsertRow = {
+  id: string;
+  group_no: number;
+  name: string;
+  table_numbers: string[] | null;
 };
 
 type GeneratedMatch = {
@@ -32,8 +40,134 @@ type GeneratedMatch = {
   status: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function toRequiredString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeEntryPlayer(value: unknown): EntryPlayerRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: toStringOrNull(value.name),
+    rating: toNumberOrNull(value.rating),
+    affiliation: toStringOrNull(value.affiliation),
+  };
+}
+
+function normalizeEntryCheckin(value: unknown): EntryCheckinRow | null {
+  if (!isRecord(value)) return null;
+
+  return {
+    status: toStringOrNull(value.status),
+  };
+}
+
+function normalizeEntryRow(value: unknown): EntryRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  if (!id) return null;
+
+  const rawPlayers = value.players;
+  const rawCheckins = value.checkins;
+
+  const playersSource = Array.isArray(rawPlayers)
+    ? rawPlayers
+    : isRecord(rawPlayers)
+      ? [rawPlayers]
+      : [];
+
+  const checkinsSource = Array.isArray(rawCheckins)
+    ? rawCheckins
+    : isRecord(rawCheckins)
+      ? [rawCheckins]
+      : [];
+
+  const players = playersSource
+    .map((player) => normalizeEntryPlayer(player))
+    .filter((player): player is EntryPlayerRow => player !== null);
+
+  const checkins = checkinsSource
+    .map((checkin) => normalizeEntryCheckin(checkin))
+    .filter((checkin): checkin is EntryCheckinRow => checkin !== null);
+
+  return {
+    id,
+    entry_rating: toNumberOrNull(value.entry_rating),
+    ranking_for_draw: toNumberOrNull(value.ranking_for_draw),
+    affiliation_order: toNumberOrNull(value.affiliation_order),
+    players,
+    checkins,
+  };
+}
+
+function normalizeLeagueGroupInsertRow(value: unknown): LeagueGroupInsertRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  const groupNo = toNumberOrNull(value.group_no);
+  const name = toStringOrNull(value.name);
+
+  if (!id || groupNo === null || name === null) return null;
+
+  const rawTableNumbers = value.table_numbers;
+  const tableNumbers = Array.isArray(rawTableNumbers)
+    ? rawTableNumbers.filter((v): v is string => typeof v === "string")
+    : null;
+
+  return {
+    id,
+    group_no: groupNo,
+    name,
+    table_numbers: tableNumbers,
+  };
+}
+
+function getPrimaryPlayer(entry: EntryRow) {
+  return entry.players[0] ?? null;
+}
+
+function getEntryDisplayName(entry: EntryRow) {
+  if (entry.players.length === 0) return "";
+
+  const names = entry.players
+    .map((player) => player.name?.trim() || "")
+    .filter((name) => name !== "");
+
+  return names.join(" / ");
+}
+
+function getEntryAffiliation(entry: EntryRow) {
+  const affiliations = entry.players
+    .map((player) => player.affiliation?.trim() || "")
+    .filter((affiliation) => affiliation !== "");
+
+  return affiliations[0] ?? "";
+}
+
+function getEntryRatingValue(entry: EntryRow) {
+  const primary = getPrimaryPlayer(entry);
+  return entry.entry_rating ?? primary?.rating ?? Number.NEGATIVE_INFINITY;
+}
+
 function getCheckinStatus(entry: EntryRow) {
-  const checkin = Array.isArray(entry.checkins) ? entry.checkins[0] : entry.checkins;
+  const checkin = entry.checkins[0] ?? null;
   return checkin?.status ?? null;
 }
 
@@ -52,15 +186,15 @@ function sortByStrength(entries: EntryRow[]) {
     const seedB = b.ranking_for_draw ?? Number.MAX_SAFE_INTEGER;
     if (seedA !== seedB) return seedA - seedB;
 
-    const ra = a.entry_rating ?? a.players?.rating ?? Number.NEGATIVE_INFINITY;
-    const rb = b.entry_rating ?? b.players?.rating ?? Number.NEGATIVE_INFINITY;
+    const ra = getEntryRatingValue(a);
+    const rb = getEntryRatingValue(b);
     if (ra !== rb) return rb - ra;
 
     const aa = a.affiliation_order ?? Number.MAX_SAFE_INTEGER;
     const ab = b.affiliation_order ?? Number.MAX_SAFE_INTEGER;
     if (aa !== ab) return aa - ab;
 
-    return (a.players?.name ?? "").localeCompare(b.players?.name ?? "", "ja");
+    return getEntryDisplayName(a).localeCompare(getEntryDisplayName(b), "ja");
   });
 }
 
@@ -70,15 +204,15 @@ function sortGroupMembersForLeagueOrder(entries: EntryRow[]) {
     const seedB = b.ranking_for_draw ?? Number.MAX_SAFE_INTEGER;
     if (seedA !== seedB) return seedA - seedB;
 
-    const ra = a.entry_rating ?? a.players?.rating ?? Number.NEGATIVE_INFINITY;
-    const rb = b.entry_rating ?? b.players?.rating ?? Number.NEGATIVE_INFINITY;
+    const ra = getEntryRatingValue(a);
+    const rb = getEntryRatingValue(b);
     if (ra !== rb) return rb - ra;
 
     const da = a.affiliation_order ?? Number.MAX_SAFE_INTEGER;
     const db = b.affiliation_order ?? Number.MAX_SAFE_INTEGER;
     if (da !== db) return da - db;
 
-    return (a.players?.name ?? "").localeCompare(b.players?.name ?? "", "ja");
+    return getEntryDisplayName(a).localeCompare(getEntryDisplayName(b), "ja");
   });
 }
 
@@ -274,59 +408,6 @@ function buildGroupSizes(total: number, groupCount: number, maxGroupSize: number
   return sizes;
 }
 
-function distributeBalanced(entries: EntryRow[], groupSizes: number[]) {
-  const sorted = sortByStrength(entries);
-  const groups: EntryRow[][] = groupSizes.map(() => []);
-
-  let direction = 1;
-  let groupIndex = 0;
-
-  for (const entry of sorted) {
-    let placed = false;
-    const affiliation = entry.players?.affiliation ?? "";
-
-    const order =
-      direction === 1
-        ? [...groups.keys()]
-        : [...groups.keys()].reverse();
-
-    for (const idx of order) {
-      if (groups[idx].length >= groupSizes[idx]) continue;
-
-      const sameAffiliationCount = groups[idx].filter(
-        (e) => (e.players?.affiliation ?? "") === affiliation && affiliation !== ""
-      ).length;
-
-      if (sameAffiliationCount === 0) {
-        groups[idx].push(entry);
-        placed = true;
-        break;
-      }
-    }
-
-    if (!placed) {
-      for (const idx of order) {
-        if (groups[idx].length >= groupSizes[idx]) continue;
-        groups[idx].push(entry);
-        placed = true;
-        break;
-      }
-    }
-
-    groupIndex += 1;
-    if (groupIndex >= groupSizes.length) {
-      groupIndex = 0;
-      direction *= -1;
-    }
-  }
-
-  return groups.map((g) => sortGroupMembersForLeagueOrder(g));
-}
-
-function getSeedValue(entry: EntryRow) {
-  return entry.ranking_for_draw ?? null;
-}
-
 function seededSnakeGroupIndex(seed: number, groupCount: number) {
   const zero = seed - 1;
   const lap = Math.floor(zero / groupCount);
@@ -340,18 +421,24 @@ function placeSeededEntriesStrict(
 ) {
   const groups: EntryRow[][] = groupSizes.map(() => []);
   const seeded = [...entries]
-    .filter((e) => getSeedValue(e) !== null)
-    .sort((a, b) => (getSeedValue(a) ?? 999999) - (getSeedValue(b) ?? 999999));
+    .filter((e) => e.ranking_for_draw !== null)
+    .sort(
+      (a, b) =>
+        (a.ranking_for_draw ?? Number.MAX_SAFE_INTEGER) -
+        (b.ranking_for_draw ?? Number.MAX_SAFE_INTEGER)
+    );
 
   const usedIds = new Set<string>();
 
   for (const entry of seeded) {
-    const seed = getSeedValue(entry);
+    const seed = entry.ranking_for_draw;
     if (seed === null) continue;
 
     const idx = seededSnakeGroupIndex(seed, groupSizes.length);
     if (groups[idx].length >= groupSizes[idx]) {
-      throw new Error(`seed ${seed} を配置できません。リーグ数または人数設定を見直してください。`);
+      throw new Error(
+        `seed ${seed} を配置できません。リーグ数または人数設定を見直してください。`
+      );
     }
 
     groups[idx].push(entry);
@@ -379,7 +466,7 @@ function placeWithAffiliationAvoidance(
   let pointer = 0;
 
   for (const entry of source) {
-    const affiliation = entry.players?.affiliation ?? "";
+    const affiliation = getEntryAffiliation(entry);
 
     let order: number[];
     if (mode === "balanced") {
@@ -399,7 +486,7 @@ function placeWithAffiliationAvoidance(
       if (groups[idx].length >= groupSizes[idx]) continue;
 
       const sameAffiliationCount = groups[idx].filter(
-        (e) => affiliation !== "" && (e.players?.affiliation ?? "") === affiliation
+        (e) => affiliation !== "" && getEntryAffiliation(e) === affiliation
       ).length;
 
       if (sameAffiliationCount === 0) {
@@ -487,7 +574,13 @@ export async function POST(request: Request) {
       });
     }
 
-    const activeEntries = ((entriesData ?? []) as EntryRow[]).filter((entry) => {
+    const entries: EntryRow[] = Array.isArray(entriesData)
+      ? entriesData
+          .map((entry) => normalizeEntryRow(entry))
+          .filter((entry): entry is EntryRow => entry !== null)
+      : [];
+
+    const activeEntries = entries.filter((entry) => {
       const status = getCheckinStatus(entry);
       return status !== "withdrawn";
     });
@@ -548,13 +641,19 @@ export async function POST(request: Request) {
       });
     }
 
-    const insertedGroups = [...(insertedGroupsData ?? [])].sort(
+    const insertedGroups: LeagueGroupInsertRow[] = Array.isArray(insertedGroupsData)
+      ? insertedGroupsData
+          .map((group) => normalizeLeagueGroupInsertRow(group))
+          .filter((group): group is LeagueGroupInsertRow => group !== null)
+      : [];
+
+    const sortedInsertedGroups = [...insertedGroups].sort(
       (a, b) => a.group_no - b.group_no
     );
 
-    for (let groupIndex = 0; groupIndex < insertedGroups.length; groupIndex += 1) {
-      const group = insertedGroups[groupIndex];
-      const members = groupedEntries[groupIndex];
+    for (let groupIndex = 0; groupIndex < sortedInsertedGroups.length; groupIndex += 1) {
+      const group = sortedInsertedGroups[groupIndex];
+      const members = groupedEntries[groupIndex] ?? [];
       const memberIds = members.map((entry) => entry.id);
 
       const memberRows = memberIds.map((entryId, index) => ({
@@ -574,7 +673,7 @@ export async function POST(request: Request) {
       }
 
       const rounds = generateRoundRobinRounds(memberIds);
-      const tableNumbers = (group.table_numbers ?? []) as string[];
+      const tableNumbers = group.table_numbers ?? [];
       const effectiveTables = tableNumbers.length > 0 ? tableNumbers : [""];
       const tableCount = effectiveTables.length;
 
@@ -586,8 +685,9 @@ export async function POST(request: Request) {
         const roundNo = roundIndex + 1;
 
         const actualPairs = rounds[roundIndex].filter(
-          (pair) => pair.player1_entry_id && pair.player2_entry_id
-        ) as Array<{ player1_entry_id: string; player2_entry_id: string }>;
+          (pair): pair is { player1_entry_id: string; player2_entry_id: string } =>
+            pair.player1_entry_id !== null && pair.player2_entry_id !== null
+        );
 
         for (let batchStart = 0; batchStart < actualPairs.length; batchStart += tableCount) {
           const batch = actualPairs.slice(batchStart, batchStart + tableCount);

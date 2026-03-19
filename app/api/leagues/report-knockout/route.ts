@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type EntryPlayerRow = {
+  id: string;
+  name: string | null;
+  affiliation: string | null;
+};
+
 type EntryRow = {
   id: string;
-  players:
-    | {
-        id: string;
-        name: string | null;
-        affiliation: string | null;
-      }
-    | null;
+  players: EntryPlayerRow[];
 };
 
 type LeagueGroupRow = {
@@ -54,6 +54,161 @@ type BlockSpec = {
   rankTo: number;
 };
 
+type InsertedMatchRow = {
+  id: string;
+  match_no: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function toRequiredString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeEntryPlayer(value: unknown): EntryPlayerRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: toStringOrNull(value.name),
+    affiliation: toStringOrNull(value.affiliation),
+  };
+}
+
+function normalizeEntryRow(value: unknown): EntryRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  if (!id) return null;
+
+  const rawPlayers = value.players;
+  const playersSource = Array.isArray(rawPlayers)
+    ? rawPlayers
+    : isRecord(rawPlayers)
+      ? [rawPlayers]
+      : [];
+
+  const players = playersSource
+    .map((player) => normalizeEntryPlayer(player))
+    .filter((player): player is EntryPlayerRow => player !== null);
+
+  return {
+    id,
+    players,
+  };
+}
+
+function normalizeLeagueGroupRow(value: unknown): LeagueGroupRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  const groupNo = toNumberOrNull(value.group_no);
+  if (!id || groupNo === null) return null;
+
+  return {
+    id,
+    group_no: groupNo,
+    name: typeof value.name === "string" ? value.name : "",
+  };
+}
+
+function normalizeLeagueGroupMemberRow(
+  value: unknown
+): LeagueGroupMemberRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  const groupId = toRequiredString(value.group_id);
+  const entryId = toRequiredString(value.entry_id);
+  const slotNo = toNumberOrNull(value.slot_no);
+
+  if (!id || !groupId || !entryId || slotNo === null) return null;
+
+  return {
+    id,
+    group_id: groupId,
+    entry_id: entryId,
+    slot_no: slotNo,
+  };
+}
+
+function normalizeLeagueMatchRow(value: unknown): LeagueMatchRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  const groupId = toRequiredString(value.group_id);
+  const player1EntryId = toRequiredString(value.player1_entry_id);
+  const player2EntryId = toRequiredString(value.player2_entry_id);
+
+  if (!id || !groupId || !player1EntryId || !player2EntryId) return null;
+
+  return {
+    id,
+    group_id: groupId,
+    player1_entry_id: player1EntryId,
+    player2_entry_id: player2EntryId,
+    winner_entry_id: toStringOrNull(value.winner_entry_id),
+    score_text: toStringOrNull(value.score_text),
+    status: typeof value.status === 'string' ? value.status : "pending",
+  };
+}
+
+function normalizeInsertedMatchRow(value: unknown): InsertedMatchRow | null {
+  if (!isRecord(value)) return null;
+
+  const id = toRequiredString(value.id);
+  const matchNo = toNumberOrNull(value.match_no);
+
+  if (!id || matchNo === null) return null;
+
+  return {
+    id,
+    match_no: matchNo,
+  };
+}
+
+function buildEntryName(entry: EntryRow | undefined): string {
+  if (!entry || entry.players.length === 0) {
+    return "-";
+  }
+
+  const names = entry.players
+    .map((player) => player.name?.trim() || "")
+    .filter((name) => name !== "");
+
+  return names.length > 0 ? names.join(" / ") : "-";
+}
+
+function buildEntryAffiliation(entry: EntryRow | undefined): string | null {
+  if (!entry || entry.players.length === 0) {
+    return null;
+  }
+
+  const affiliations = entry.players
+    .map((player) => player.affiliation?.trim() || "")
+    .filter((affiliation) => affiliation !== "");
+
+  if (affiliations.length === 0) {
+    return null;
+  }
+
+  const uniqueAffiliations = [...new Set(affiliations)];
+  return uniqueAffiliations.join(" / ");
+}
+
 function pairKey(a: string, b: string) {
   return [a, b].sort().join(":");
 }
@@ -86,8 +241,8 @@ function buildStandings(params: {
     statsMap.set(member.entry_id, {
       entry_id: member.entry_id,
       slot_no: member.slot_no,
-      name: entry?.players?.name ?? "-",
-      affiliation: entry?.players?.affiliation ?? null,
+      name: buildEntryName(entry),
+      affiliation: buildEntryAffiliation(entry),
       played: 0,
       wins: 0,
       losses: 0,
@@ -167,7 +322,13 @@ function parseBlockLines(raw: string) {
     const rankFrom = Number(parts[1]);
     const rankTo = Number(parts[2]);
 
-    if (!name || !Number.isInteger(rankFrom) || !Number.isInteger(rankTo) || rankFrom < 1 || rankTo < rankFrom) {
+    if (
+      !name ||
+      !Number.isInteger(rankFrom) ||
+      !Number.isInteger(rankTo) ||
+      rankFrom < 1 ||
+      rankTo < rankFrom
+    ) {
       return null;
     }
 
@@ -185,12 +346,15 @@ function nextPowerOfTwo(n: number) {
 
 function generateSeedOrder(size: number): number[] {
   if (size === 1) return [1];
+
   const prev = generateSeedOrder(size / 2);
   const result: number[] = [];
+
   for (const seed of prev) {
     result.push(seed);
     result.push(size + 1 - seed);
   }
+
   return result;
 }
 
@@ -333,7 +497,12 @@ export async function POST(request: Request) {
       .eq("division_id", divisionId)
       .eq("status", "entered");
 
-    const entries = (entriesData ?? []) as EntryRow[];
+    const entries: EntryRow[] = Array.isArray(entriesData)
+      ? entriesData
+          .map((entry) => normalizeEntryRow(entry))
+          .filter((entry): entry is EntryRow => entry !== null)
+      : [];
+
     const entryMap = new Map<string, EntryRow>();
     for (const entry of entries) {
       entryMap.set(entry.id, entry);
@@ -345,7 +514,12 @@ export async function POST(request: Request) {
       .eq("division_id", divisionId)
       .order("group_no", { ascending: true });
 
-    const groups = (groupsData ?? []) as LeagueGroupRow[];
+    const groups: LeagueGroupRow[] = Array.isArray(groupsData)
+      ? groupsData
+          .map((group) => normalizeLeagueGroupRow(group))
+          .filter((group): group is LeagueGroupRow => group !== null)
+      : [];
+
     if (groups.length === 0) {
       return NextResponse.redirect(
         new URL(
@@ -376,8 +550,17 @@ export async function POST(request: Request) {
       `)
       .in("group_id", groupIds);
 
-    const members = (membersData ?? []) as LeagueGroupMemberRow[];
-    const leagueMatches = (leagueMatchesData ?? []) as LeagueMatchRow[];
+    const members: LeagueGroupMemberRow[] = Array.isArray(membersData)
+      ? membersData
+          .map((member) => normalizeLeagueGroupMemberRow(member))
+          .filter((member): member is LeagueGroupMemberRow => member !== null)
+      : [];
+
+    const leagueMatches: LeagueMatchRow[] = Array.isArray(leagueMatchesData)
+      ? leagueMatchesData
+          .map((match) => normalizeLeagueMatchRow(match))
+          .filter((match): match is LeagueMatchRow => match !== null)
+      : [];
 
     if (leagueMatches.some((match) => match.status !== "completed")) {
       return NextResponse.redirect(
@@ -422,9 +605,12 @@ export async function POST(request: Request) {
       .eq("division_id", divisionId);
 
     if (deleteError) {
-      return new Response(`既存順位別トーナメント削除に失敗しました: ${deleteError.message}`, {
-        status: 500,
-      });
+      return new Response(
+        `既存順位別トーナメント削除に失敗しました: ${deleteError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     for (let blockIndex = 0; blockIndex < blockSpecs.length; blockIndex += 1) {
@@ -464,15 +650,18 @@ export async function POST(request: Request) {
         .single();
 
       if (bracketError || !bracketData) {
-        return new Response(`順位別トーナメント作成に失敗しました: ${bracketError?.message}`, {
-          status: 500,
-        });
+        return new Response(
+          `順位別トーナメント作成に失敗しました: ${bracketError?.message}`,
+          {
+            status: 500,
+          }
+        );
       }
 
       const bracketSize = nextPowerOfTwo(selectedEntryIds.length);
       const totalRounds = Math.log2(bracketSize);
 
-      const roundRows: Array<Array<{ id: string; match_no: number }>> = [];
+      const roundRows: InsertedMatchRow[][] = [];
 
       for (let roundNo = 1; roundNo <= totalRounds; roundNo += 1) {
         const numMatches = bracketSize / Math.pow(2, roundNo);
@@ -495,21 +684,37 @@ export async function POST(request: Request) {
           });
         }
 
+        const normalizedInsertedMatches: InsertedMatchRow[] = Array.isArray(
+          insertedMatches
+        )
+          ? insertedMatches
+              .map((row) => normalizeInsertedMatchRow(row))
+              .filter((row): row is InsertedMatchRow => row !== null)
+          : [];
+
         roundRows.push(
-          [...(insertedMatches ?? [])].sort((a, b) => a.match_no - b.match_no) as Array<{
-            id: string;
-            match_no: number;
-          }>
+          [...normalizedInsertedMatches].sort((a, b) => a.match_no - b.match_no)
         );
       }
 
-      for (let roundIndex = 0; roundIndex < roundRows.length - 1; roundIndex += 1) {
+      for (
+        let roundIndex = 0;
+        roundIndex < roundRows.length - 1;
+        roundIndex += 1
+      ) {
         const currentRound = roundRows[roundIndex];
         const nextRound = roundRows[roundIndex + 1];
 
         for (let matchIndex = 0; matchIndex < currentRound.length; matchIndex += 1) {
           const currentMatch = currentRound[matchIndex];
           const nextMatch = nextRound[Math.floor(matchIndex / 2)];
+
+          if (!nextMatch) {
+            return new Response("次ラウンドの試合生成に不整合があります。", {
+              status: 500,
+            });
+          }
+
           const nextSlot = matchIndex % 2 === 0 ? 1 : 2;
 
           const { error } = await supabase
@@ -537,6 +742,11 @@ export async function POST(request: Request) {
       }
 
       const firstRound = roundRows[0];
+      if (!firstRound) {
+        return new Response("初戦データの生成に失敗しました。", {
+          status: 500,
+        });
+      }
 
       for (let i = 0; i < firstRound.length; i += 1) {
         const match = firstRound[i];
@@ -569,7 +779,9 @@ export async function POST(request: Request) {
     );
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "順位別トーナメント生成に失敗しました。";
+      error instanceof Error
+        ? error.message
+        : "順位別トーナメント生成に失敗しました。";
 
     return new Response(message, {
       status: 500,

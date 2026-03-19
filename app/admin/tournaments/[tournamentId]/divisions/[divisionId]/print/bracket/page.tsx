@@ -25,9 +25,20 @@ type BracketMatch = {
   next_slot?: number | null;
 };
 
+type EntryWithPlayersArray = {
+  id: string;
+  players:
+    | Array<{
+        id: string;
+        name: string | null;
+        affiliation: string | null;
+      }>
+    | null;
+};
+
 export default async function PrintBracketPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")
@@ -41,7 +52,7 @@ export default async function PrintBracketPage({ params }: PageProps) {
     .eq("id", divisionId)
     .single();
 
-  const { data: entriesData } = await supabase
+  const { data: rawEntriesData } = await supabase
     .from("entries")
     .select(`
       id,
@@ -54,12 +65,13 @@ export default async function PrintBracketPage({ params }: PageProps) {
     .eq("division_id", divisionId)
     .eq("status", "entered");
 
+  const entriesData = (rawEntriesData ?? []) as EntryWithPlayersArray[];
+
   const entryLabelMap: Record<string, string> = {};
-  for (const entry of entriesData ?? []) {
-    const name = entry.players?.name ?? "-";
-    const affiliation = entry.players?.affiliation
-      ? `（${entry.players.affiliation}）`
-      : "";
+  for (const entry of entriesData) {
+    const player = Array.isArray(entry.players) ? (entry.players[0] ?? null) : null;
+    const name = player?.name ?? "-";
+    const affiliation = player?.affiliation ? `（${player.affiliation}）` : "";
     entryLabelMap[entry.id] = `${name}${affiliation}`;
   }
 

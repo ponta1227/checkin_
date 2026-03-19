@@ -36,23 +36,6 @@ type LeagueSeedRef = {
 
 type KnockoutSeedSlot = LeagueSeedRef | null;
 
-function shuffleArray<T>(arr: T[]) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-function chunkArray<T>(arr: T[], size: number) {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
-
 function nextPowerOfTwo(n: number) {
   let p = 1;
   while (p < n) p *= 2;
@@ -99,7 +82,7 @@ function distributeEntriesToLeagues(
 
   if (leagueCount === 0) leagueCount = 1;
 
-  let sizes: number[] = Array.from({ length: leagueCount }, () => baseLeagueSize);
+  const sizes: number[] = Array.from({ length: leagueCount }, () => baseLeagueSize);
 
   if (remainder > 0) {
     if (remainderPolicy === "allow_smaller") {
@@ -176,21 +159,31 @@ function buildRoundRobinPairs(entryIds: string[]) {
   return rounds;
 }
 
-function buildUpperLowerSources(groupCount: number) {
+function buildUpperLowerSources(groupCount: number, maxRank: number) {
   const upper: LeagueSeedRef[] = [];
   const lower: LeagueSeedRef[] = [];
 
   for (let groupNo = 1; groupNo <= groupCount; groupNo += 1) {
     upper.push({ groupNo, rank: 1 });
-    upper.push({ groupNo, rank: 2 });
-    lower.push({ groupNo, rank: 3 });
-    lower.push({ groupNo, rank: 4 });
+  }
+  for (let groupNo = 1; groupNo <= groupCount; groupNo += 1) {
+    if (maxRank >= 2) {
+      upper.push({ groupNo, rank: 2 });
+    }
   }
 
-  return {
-    upper: upper.filter((x) => x.rank <= 2),
-    lower: lower.filter((x) => x.rank >= 3),
-  };
+  for (let groupNo = 1; groupNo <= groupCount; groupNo += 1) {
+    if (maxRank >= 3) {
+      lower.push({ groupNo, rank: 3 });
+    }
+  }
+  for (let groupNo = 1; groupNo <= groupCount; groupNo += 1) {
+    if (maxRank >= 4) {
+      lower.push({ groupNo, rank: 4 });
+    }
+  }
+
+  return { upper, lower };
 }
 
 function buildRankBasedSources(groupCount: number, maxRank: number) {
@@ -204,28 +197,50 @@ function buildRankBasedSources(groupCount: number, maxRank: number) {
   return result;
 }
 
-function snakeSeedRefs(seedRefs: LeagueSeedRef[]) {
-  const sorted = [...seedRefs].sort((a, b) => {
-    if (a.groupNo !== b.groupNo) return a.groupNo - b.groupNo;
-    return a.rank - b.rank;
-  });
+function buildSeedPositions(size: number): number[] {
+  if (size === 1) return [1];
 
-  return sorted;
+  let positions = [1, 2];
+  while (positions.length < size) {
+    const nextSize = positions.length * 2;
+    const next: number[] = [];
+    for (const p of positions) {
+      next.push(p);
+      next.push(nextSize + 1 - p);
+    }
+    positions = next;
+  }
+
+  return positions;
 }
 
 function buildBracketRound1Pairs(seedRefs: LeagueSeedRef[]) {
-  const refs = snakeSeedRefs(seedRefs);
+  const refs = [...seedRefs];
   const size = nextPowerOfTwo(refs.length);
-  const slots: KnockoutSeedSlot[] = Array.from({ length: size }, (_, i) => refs[i] ?? null);
+
+  const seededOrder = buildSeedPositions(size);
+
+  const slotMap = new Map<number, KnockoutSeedSlot>();
+  for (let i = 0; i < size; i += 1) {
+    slotMap.set(i + 1, refs[i] ?? null);
+  }
+
+  const arrangedSlots: KnockoutSeedSlot[] = seededOrder.map((seedNo) => {
+    return slotMap.get(seedNo) ?? null;
+  });
 
   const pairs: Array<[KnockoutSeedSlot, KnockoutSeedSlot]> = [];
-  for (let i = 0; i < slots.length; i += 2) {
-    pairs.push([slots[i] ?? null, slots[i + 1] ?? null]);
+  for (let i = 0; i < arrangedSlots.length; i += 2) {
+    pairs.push([arrangedSlots[i] ?? null, arrangedSlots[i + 1] ?? null]);
   }
+
   return { size, pairs };
 }
 
-async function deleteExistingLeagueAndKnockoutData(supabase: ReturnType<typeof createSupabaseServerClient>, divisionId: string) {
+async function deleteExistingLeagueAndKnockoutData(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  divisionId: string
+) {
   const { data: existingBrackets } = await supabase
     .from("brackets")
     .select("id")
@@ -233,16 +248,10 @@ async function deleteExistingLeagueAndKnockoutData(supabase: ReturnType<typeof c
 
   const bracketIds = (existingBrackets ?? []).map((b) => b.id);
 
-  await supabase
-    .from("matches")
-    .delete()
-    .eq("division_id", divisionId);
+  await supabase.from("matches").delete().eq("division_id", divisionId);
 
   if (bracketIds.length > 0) {
-    await supabase
-      .from("brackets")
-      .delete()
-      .in("id", bracketIds);
+    await supabase.from("brackets").delete().in("id", bracketIds);
   }
 }
 
@@ -449,10 +458,7 @@ export async function POST(request: Request) {
         })),
       });
 
-      const maxRank = Math.max(
-        ...groupedStandings.map((g) => g.standings.length),
-        0
-      );
+      const maxRank = Math.max(...groupedStandings.map((g) => g.standings.length), 0);
 
       const { data: existingBrackets } = await supabase
         .from("brackets")
@@ -501,11 +507,11 @@ export async function POST(request: Request) {
       const knockoutMatchRows: Array<Record<string, unknown>> = [];
 
       if (knockoutMode === "upper_lower") {
-        const { upper, lower } = buildUpperLowerSources(groupCount);
+        const { upper, lower } = buildUpperLowerSources(groupCount, maxRank);
 
         const buckets = [
-          { bracketType: "upper", refs: upper.filter((r) => r.rank <= 2) },
-          { bracketType: "lower", refs: lower.filter((r) => r.rank <= maxRank) },
+          { bracketType: "upper", refs: upper },
+          { bracketType: "lower", refs: lower },
         ];
 
         for (const bucket of buckets) {
@@ -652,9 +658,12 @@ export async function POST(request: Request) {
           .insert(knockoutMatchRows);
 
         if (insertKnockoutError) {
-          return new Response(`順位別トーナメント生成に失敗しました: ${insertKnockoutError.message}`, {
-            status: 500,
-          });
+          return new Response(
+            `順位別トーナメント生成に失敗しました: ${insertKnockoutError.message}`,
+            {
+              status: 500,
+            }
+          );
         }
       }
 

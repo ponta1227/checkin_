@@ -2,28 +2,57 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SupabaseClient = ReturnType<typeof createSupabaseServerClient>;
 
+type PlayerRow = {
+  id: string;
+  name: string | null;
+  affiliation: string | null;
+  rating: number | null;
+};
+
+type CheckinRow = {
+  status: string | null;
+};
+
 type EntryRow = {
   id: string;
   seed: number | null;
   entry_rating: number | null;
   ranking_for_draw: number | null;
-  players:
-    | {
-        id: string;
-        name: string | null;
-        rating: number | null;
-        affiliation: string | null;
-      }
-    | null;
-  checkins:
-    | { status: string | null }[]
-    | { status: string | null }
-    | null;
+  players: PlayerRow[] | null;
+  checkins: CheckinRow[] | null;
 };
 
 function getCheckinStatus(entry: EntryRow) {
-  const checkin = Array.isArray(entry.checkins) ? entry.checkins[0] : entry.checkins;
+  const checkin = Array.isArray(entry.checkins) ? entry.checkins[0] : null;
   return checkin?.status ?? null;
+}
+
+function getPlayerRatings(entry: EntryRow): number[] {
+  if (!Array.isArray(entry.players)) return [];
+  return entry.players
+    .map((player) => player.rating)
+    .filter((rating): rating is number => typeof rating === "number");
+}
+
+function getPrimaryPlayerName(entry: EntryRow) {
+  if (!Array.isArray(entry.players) || entry.players.length === 0) {
+    return "";
+  }
+
+  return entry.players[0]?.name ?? "";
+}
+
+function getEntrySortRating(entry: EntryRow) {
+  if (typeof entry.entry_rating === "number") {
+    return entry.entry_rating;
+  }
+
+  const ratings = getPlayerRatings(entry);
+  if (ratings.length === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  return Math.max(...ratings);
 }
 
 function sortEntries(entries: EntryRow[]) {
@@ -36,11 +65,11 @@ function sortEntries(entries: EntryRow[]) {
     const drawB = b.ranking_for_draw ?? Number.MAX_SAFE_INTEGER;
     if (drawA !== drawB) return drawA - drawB;
 
-    const ratingA = a.entry_rating ?? a.players?.rating ?? Number.NEGATIVE_INFINITY;
-    const ratingB = b.entry_rating ?? b.players?.rating ?? Number.NEGATIVE_INFINITY;
+    const ratingA = getEntrySortRating(a);
+    const ratingB = getEntrySortRating(b);
     if (ratingA !== ratingB) return ratingB - ratingA;
 
-    return (a.players?.name ?? "").localeCompare(b.players?.name ?? "", "ja");
+    return getPrimaryPlayerName(a).localeCompare(getPrimaryPlayerName(b), "ja");
   });
 }
 
@@ -52,12 +81,15 @@ function nextPowerOfTwo(n: number) {
 
 function generateSeedOrder(size: number): number[] {
   if (size === 1) return [1];
+
   const prev = generateSeedOrder(size / 2);
   const result: number[] = [];
+
   for (const seed of prev) {
     result.push(seed);
     result.push(size + 1 - seed);
   }
+
   return result;
 }
 
@@ -85,10 +117,7 @@ async function advanceWinner(
     .eq("id", currentMatch.next_match_id);
 }
 
-async function applyWalkovers(
-  supabase: SupabaseClient,
-  bracketId: string
-) {
+async function applyWalkovers(supabase: SupabaseClient, bracketId: string) {
   let changed = true;
 
   while (changed) {
@@ -213,17 +242,19 @@ export async function regenerateMainBracket(
   let bracketId = existingBracket?.id ?? null;
 
   if (!bracketId) {
-   const { data: insertedBracket, error: insertBracketError } = await supabase
-      .from("brackets")
-      .insert({
-        division_id: divisionId,
-        bracket_type: "main",
-      })
-      .select("id")
-      .single();
+    const { data: insertedBracket, error: insertBracketError } = await supabase
+      .from("brackets")
+      .insert({
+        division_id: divisionId,
+        bracket_type: "main",
+      })
+      .select("id")
+      .single();
 
     if (insertBracketError || !insertedBracket) {
-      throw new Error(`brackets追加失敗: ${insertBracketError?.message ?? "unknown"}`);
+      throw new Error(
+        `brackets追加失敗: ${insertBracketError?.message ?? "unknown"}`
+      );
     }
 
     bracketId = insertedBracket.id;
@@ -233,15 +264,15 @@ export async function regenerateMainBracket(
       .select("id, status")
       .eq("bracket_id", bracketId);
 
-    const hasCompleted = (existingMatches ?? []).some((m) => m.status === "completed");
+    const hasCompleted = (existingMatches ?? []).some(
+      (match) => match.status === "completed"
+    );
+
     if (hasCompleted) {
       return { ok: false, reason: "has_completed_results" as const };
     }
 
-    await supabase
-      .from("matches")
-      .delete()
-      .eq("bracket_id", bracketId);
+    await supabase.from("matches").delete().eq("bracket_id", bracketId);
   }
 
   const bracketSize = nextPowerOfTwo(activeEntries.length);

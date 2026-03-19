@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeDivisionFormat } from "@/lib/divisions/format";
@@ -11,7 +12,7 @@ type PageProps = {
   }>;
 };
 
-function buttonStyle(): React.CSSProperties {
+function buttonStyle(): CSSProperties {
   return {
     display: "inline-block",
     padding: "10px 14px",
@@ -39,7 +40,18 @@ export default async function DivisionPrintIndexPage({ params }: PageProps) {
     .eq("id", divisionId)
     .single();
 
-  const format = normalizeDivisionFormat(division?.format);
+  const normalizedFormat = normalizeDivisionFormat(division?.format);
+  const format: string = String(normalizedFormat ?? "");
+
+  const showLeaguePrint =
+    format === "league" || format === "league_then_knockout";
+
+  const showBracketPrint =
+    format === "single_elimination" ||
+    format === "knockout" ||
+    format === "tournament";
+
+  const showLeagueKnockoutPrint = format === "league_then_knockout";
 
   return (
     <main style={{ padding: "24px" }}>
@@ -57,7 +69,7 @@ export default async function DivisionPrintIndexPage({ params }: PageProps) {
       </div>
 
       <div style={{ display: "grid", gap: "12px" }}>
-        {(format === "league" || format === "league_then_knockout") && (
+        {showLeaguePrint && (
           <Link
             href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/print/league`}
             style={buttonStyle()}
@@ -66,7 +78,7 @@ export default async function DivisionPrintIndexPage({ params }: PageProps) {
           </Link>
         )}
 
-        {(format === "knockout" || format === "single_elimination") && (
+        {showBracketPrint && (
           <Link
             href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/print/bracket`}
             style={buttonStyle()}
@@ -75,7 +87,7 @@ export default async function DivisionPrintIndexPage({ params }: PageProps) {
           </Link>
         )}
 
-        {format === "league_then_knockout" && (
+        {showLeagueKnockoutPrint && (
           <>
             <Link
               href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/print/league-knockout`}
@@ -87,6 +99,7 @@ export default async function DivisionPrintIndexPage({ params }: PageProps) {
             <Link
               href={`/api/divisions/${divisionId}/league-knockout-pdf`}
               target="_blank"
+              rel="noopener noreferrer"
               style={buttonStyle()}
             >
               順位別トーナメントPDFを開く

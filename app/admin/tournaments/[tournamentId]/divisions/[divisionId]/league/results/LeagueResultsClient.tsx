@@ -563,7 +563,7 @@ export default function LeagueResultsClient({
           border: 1px solid #222;
           padding: 3px;
           vertical-align: middle;
-        }
+           }
         .slot-cell {
           width: 22px;
           text-align: center;
@@ -755,6 +755,8 @@ export default function LeagueResultsClient({
               groupMatches,
             });
 
+            const tableNumbers = group.table_numbers ?? [];
+
             const allCompleted =
               groupMatches.length > 0 &&
               groupMatches.every((match) => match.status === "completed");
@@ -778,7 +780,7 @@ export default function LeagueResultsClient({
                   {group.name}
                   <span className="header-actions">
                     <span style={{ fontSize: "12px", fontWeight: 400 }}>
-                      コート: {(group.table_numbers ?? []).length > 0 ? group.table_numbers.join(", ") : "未設定"}
+                      コート: {tableNumbers.length > 0 ? tableNumbers.join(", ") : "未設定"}
                     </span>
 
                     {group.results_confirmed ? (
