@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 type Tournament = {
   id: string;
@@ -10,6 +13,8 @@ type Tournament = {
 };
 
 export default async function AdminTournamentsPage() {
+  await connection();
+
   const supabase = createSupabaseServerClient();
 
   const { data: tournaments, error } = await supabase
