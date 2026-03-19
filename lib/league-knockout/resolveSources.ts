@@ -1,4 +1,4 @@
-import { buildStandings } from "@/lib/league/buildStandings";
+import { buildStandings } from "@/lib/leagues/buildStandings";
 
 type SupabaseLike = {
   from: (table: string) => any;

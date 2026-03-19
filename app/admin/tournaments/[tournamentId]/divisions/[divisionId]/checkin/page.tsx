@@ -51,7 +51,7 @@ function buildMembersLabel(entry: EntryRow) {
 
 export default async function DivisionCheckinPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")

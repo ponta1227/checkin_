@@ -20,7 +20,7 @@ function getBracketLabel(bracketType: string) {
 
 export default async function PublicProgressPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

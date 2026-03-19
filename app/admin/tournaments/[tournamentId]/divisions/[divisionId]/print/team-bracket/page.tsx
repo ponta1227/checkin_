@@ -21,7 +21,7 @@ function getBracketLabel(bracketType: string) {
 
 export default async function TeamBracketPrintPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")

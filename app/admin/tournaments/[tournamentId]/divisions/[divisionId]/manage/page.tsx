@@ -10,7 +10,7 @@ type PageProps = {
 
 export default async function DivisionManageRouterPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

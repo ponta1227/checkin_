@@ -1,6 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+
+type TournamentAssignmentRow = {
+  matchId: string;
+  assignedCourts: number[];
+};
 
 type Props = {
   tournamentId: string;
@@ -8,156 +13,134 @@ type Props = {
   matchId: string;
   courtCount: number;
   assignedCourts: number[];
-  allTournamentAssignments: Array<{
-    matchId: string;
-    assignedCourts: number[];
-  }>;
+  allTournamentAssignments: TournamentAssignmentRow[];
 };
 
-function normalizeCourts(values: Array<number | "">) {
-  const nums = values
-    .filter((v): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1);
+function stringifyCourtNumbers(values: number[] | null | undefined): string {
+  return Array.isArray(values) && values.length > 0 ? values.join(",") : "";
+}
 
-  const deduped: number[] = [];
-  for (const n of nums) {
-    if (!deduped.includes(n)) deduped.push(n);
-  }
-  return deduped.slice(0, 4);
+function parseCourtNumbers(value: string): number[] {
+  return value
+    .split(",")
+    .map((v) => Number(v.trim()))
+    .filter((v) => Number.isInteger(v) && v > 0);
 }
 
 export default function TournamentMatchCourtInlineClient({
-  tournamentId,
   divisionId,
   matchId,
   courtCount,
   assignedCourts,
   allTournamentAssignments,
 }: Props) {
-  const [isPending, startTransition] = useTransition();
+  const [courtText, setCourtText] = useState(stringifyCourtNumbers(assignedCourts));
   const [message, setMessage] = useState("");
-  const [localCourts, setLocalCourts] = useState<number[]>(assignedCourts);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setCourtText(stringifyCourtNumbers(assignedCourts));
+  }, [assignedCourts]);
 
   const usedByOtherMatches = useMemo(() => {
+    const current = new Set(assignedCourts);
     const used = new Set<number>();
 
     for (const row of allTournamentAssignments) {
       if (row.matchId === matchId) continue;
-      for (const courtNo of row.assignedCourts) {
-        used.add(courtNo);
+      for (const n of row.assignedCourts ?? []) {
+        if (!current.has(n)) used.add(n);
       }
     }
 
-    return used;
-  }, [allTournamentAssignments, matchId]);
-
-  function currentSlotValues() {
-    const arr = [...localCourts];
-    while (arr.length < 4) arr.push(undefined as unknown as number);
-    return arr.slice(0, 4).map((v) => (typeof v === "number" ? String(v) : ""));
-  }
-
-  function updateSlot(slotIndex: number, rawValue: string) {
-    setLocalCourts((prev) => {
-      const current = [...prev];
-      while (current.length < 4) current.push(undefined as unknown as number);
-
-      current[slotIndex] = rawValue === "" ? ("" as unknown as number) : Number(rawValue);
-
-      return normalizeCourts(
-        current.map((v) => (typeof v === "number" && Number.isFinite(v) ? v : "")) as Array<
-          number | ""
-        >
-      );
-    });
-  }
+    return Array.from(used).sort((a, b) => a - b);
+  }, [allTournamentAssignments, assignedCourts, matchId]);
 
   function save() {
-    setMessage("");
+    const courtNumbers = parseCourtNumbers(courtText);
 
     startTransition(async () => {
       try {
-        const res = await fetch("/api/team-matches/update-table-assignments", {
+        const res = await fetch("/api/team-matches/update-match-courts", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
-            tournamentId,
             divisionId,
-            mode: "match",
             matchId,
-            courtNos: localCourts,
+            courtNumbers,
           }),
         });
 
         const text = await res.text();
-        if (!res.ok) throw new Error(text || "コート保存に失敗しました。");
+        if (!res.ok) {
+          throw new Error(text || "試合コート保存に失敗しました。");
+        }
 
         setMessage("保存しました");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "コート保存に失敗しました。");
+        setMessage(
+          error instanceof Error ? error.message : "試合コート保存に失敗しました。"
+        );
       }
     });
   }
 
-  if (courtCount <= 0) {
-    return <span style={{ color: "#666" }}>未設定</span>;
-  }
-
-  const slotValues = currentSlotValues();
-
   return (
-    <div style={{ display: "grid", gap: "8px", minWidth: "132px" }}>
-      {[0, 1, 2, 3].map((slotIndex) => (
-        <select
-          key={`${matchId}-${slotIndex}`}
-          value={slotValues[slotIndex]}
-          onChange={(e) => updateSlot(slotIndex, e.target.value)}
+    <div style={{ display: "grid", gap: "6px", justifyItems: "center" }}>
+      <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          value={courtText}
+          onChange={(e) => setCourtText(e.target.value)}
+          placeholder="例: 3 または 1,4"
           style={{
-            width: "120px",
+            width: "130px",
             padding: "6px 8px",
             border: "1px solid #ccc",
-            borderRadius: "8px",
+            borderRadius: "6px",
+            fontSize: "12px",
+          }}
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={isPending}
+          style={{
+            padding: "6px 10px",
+            border: "1px solid #ccc",
+            borderRadius: "6px",
             background: "white",
+            cursor: "pointer",
             fontSize: "12px",
           }}
         >
-          <option value="">未設定</option>
-          {Array.from({ length: courtCount }, (_, i) => i + 1).map((courtNo) => {
-            const selectedHere = localCourts.includes(courtNo);
-            const unusedAnywhere = !usedByOtherMatches.has(courtNo) && !selectedHere;
+          保存
+        </button>
+      </div>
 
-            let color = "#999";
-            if (selectedHere) {
-              color = "#111";
-            } else if (unusedAnywhere) {
-              color = "#d11";
-            }
+      <div style={{ fontSize: "12px", color: "#666", textAlign: "center" }}>
+        {parseCourtNumbers(courtText).length > 0
+          ? parseCourtNumbers(courtText)
+              .map((n) => `${n}コート`)
+              .join(", ")
+          : "未設定"}
+      </div>
 
-            return (
-              <option key={courtNo} value={courtNo} style={{ color }}>
-                {courtNo}コート
-              </option>
-            );
-          })}
-        </select>
-      ))}
+      {usedByOtherMatches.length > 0 ? (
+        <div style={{ fontSize: "11px", color: "#999", textAlign: "center" }}>
+          他試合で使用中: {usedByOtherMatches.join(", ")}
+          {courtCount > 0 ? ` / 全${courtCount}コート` : ""}
+        </div>
+      ) : courtCount > 0 ? (
+        <div style={{ fontSize: "11px", color: "#999", textAlign: "center" }}>
+          全{courtCount}コート
+        </div>
+      ) : null}
 
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={save}
-        style={{
-          padding: "7px 10px",
-          border: "1px solid #ccc",
-          borderRadius: "8px",
-          background: "white",
-          cursor: "pointer",
-          fontSize: "12px",
-        }}
-      >
-        保存
-      </button>
-
-      {message ? <div style={{ fontSize: "11px", color: "#666" }}>{message}</div> : null}
+      {message ? (
+        <div style={{ fontSize: "11px", color: "#666", textAlign: "center" }}>{message}</div>
+      ) : null}
     </div>
   );
 }

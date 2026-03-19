@@ -55,7 +55,7 @@ export default async function DivisionResultsPage({
 }: PageProps) {
   const { tournamentId, divisionId } = await params;
   const resolvedSearchParams = await searchParams;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

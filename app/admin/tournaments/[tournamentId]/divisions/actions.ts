@@ -76,7 +76,7 @@ export async function createDivisionAction(formData: FormData) {
     throw new Error("団体戦形式を選択してください。");
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const insertPayload = {
     tournament_id: tournamentId,

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       return new Response("勝者選択とゲーム数が一致していません。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: division, error: divisionError } = await supabase
       .from("divisions")

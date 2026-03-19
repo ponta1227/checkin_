@@ -13,8 +13,7 @@ export async function POST(request: Request) {
       return new Response("必要なIDが不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
-
+    const supabase = await createSupabaseServerClient();
     const result = await regenerateMainBracket(supabase, divisionId);
 
     if (!result.ok && result.reason === "need_two_players") {

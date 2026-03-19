@@ -75,7 +75,7 @@ export async function GET(
   { params }: { params: Promise<{ divisionId: string }> }
 ) {
   const { divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

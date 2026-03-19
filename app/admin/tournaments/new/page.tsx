@@ -15,7 +15,7 @@ async function createTournamentAction(formData: FormData) {
     throw new Error("大会名は必須です。");
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const insertPayload: Record<string, string | null> = {
     name,

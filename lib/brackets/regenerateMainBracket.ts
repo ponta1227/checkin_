@@ -1,6 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type SupabaseClient = ReturnType<typeof createSupabaseServerClient>;
+type SupabaseClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 type PlayerRow = {
   id: string;

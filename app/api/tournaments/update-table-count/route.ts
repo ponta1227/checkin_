@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       return new Response("使用台数は0以上の整数で入力してください。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("tournaments")

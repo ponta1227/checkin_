@@ -53,7 +53,7 @@ function resolveTeamDisplayName(params: {
 
 export default async function PublicProgressTokenPage({ params }: PageProps) {
   const { tournamentId, divisionId, token } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division, error: divisionError } = await supabase
     .from("divisions")

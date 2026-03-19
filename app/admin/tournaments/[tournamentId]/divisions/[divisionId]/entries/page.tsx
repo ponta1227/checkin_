@@ -62,7 +62,7 @@ function buildMembersText(entry: EntryRow) {
 
 export default async function DivisionEntriesPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")

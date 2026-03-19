@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 type EntryPlayerRow = {
   id: string;
   name: string | null;
@@ -162,7 +166,7 @@ function normalizeLeagueMatchRow(value: unknown): LeagueMatchRow | null {
     player2_entry_id: player2EntryId,
     winner_entry_id: toStringOrNull(value.winner_entry_id),
     score_text: toStringOrNull(value.score_text),
-    status: typeof value.status === 'string' ? value.status : "pending",
+    status: typeof value.status === "string" ? value.status : "pending",
   };
 }
 
@@ -359,7 +363,7 @@ function generateSeedOrder(size: number): number[] {
 }
 
 async function advanceWinner(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: SupabaseServerClient,
   matchId: string,
   winnerEntryId: string
 ) {
@@ -383,7 +387,7 @@ async function advanceWinner(
 }
 
 async function applyWalkovers(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: SupabaseServerClient,
   bracketId: string
 ) {
   let changed = true;
@@ -482,7 +486,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: entriesData } = await supabase
       .from("entries")
@@ -705,7 +709,11 @@ export async function POST(request: Request) {
         const currentRound = roundRows[roundIndex];
         const nextRound = roundRows[roundIndex + 1];
 
-        for (let matchIndex = 0; matchIndex < currentRound.length; matchIndex += 1) {
+        for (
+          let matchIndex = 0;
+          matchIndex < currentRound.length;
+          matchIndex += 1
+        ) {
           const currentMatch = currentRound[matchIndex];
           const nextMatch = nextRound[Math.floor(matchIndex / 2)];
 

@@ -7,6 +7,40 @@ type PageProps = {
   params: Promise<{ tournamentId: string; divisionId: string }>;
 };
 
+type CheckinRow = {
+  id: string;
+  status: string | null;
+  member_confirmed: boolean | null;
+};
+
+type EntryRow = {
+  id: string;
+  entry_name: string | null;
+  entry_affiliation: string | null;
+  ranking_for_draw: number | null;
+  affiliation_order: number | null;
+  status: string | null;
+  checkins: CheckinRow[] | null;
+};
+
+type DivisionRow = {
+  id: string;
+  name: string;
+  event_type: string | null;
+  team_match_format: string | null;
+  team_member_required: boolean | null;
+  team_member_count_min: number | null;
+  team_member_count_max: number | null;
+};
+
+type TeamMemberRow = {
+  id: string;
+  entry_id: string;
+  name: string;
+  affiliation: string | null;
+  member_order: number | null;
+};
+
 function getCheckinLabel(status: string | null | undefined) {
   if (status === "checked_in") return "受付済";
   if (status === "withdrawn") return "棄権";
@@ -21,7 +55,7 @@ function getCheckinColor(status: string | null | undefined) {
 
 export default async function TeamDivisionCheckinPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")
@@ -29,7 +63,7 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
     .eq("id", tournamentId)
     .single();
 
-  const { data: division } = await supabase
+  const { data: divisionData } = await supabase
     .from("divisions")
     .select(`
       id,
@@ -42,6 +76,8 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
     `)
     .eq("id", divisionId)
     .single();
+
+  const division = divisionData as DivisionRow | null;
 
   if (!division || division.event_type !== "team") {
     return (
@@ -56,7 +92,7 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
     );
   }
 
-  const { data: entries } = await supabase
+  const { data: entriesData } = await supabase
     .from("entries")
     .select(`
       id,
@@ -76,35 +112,25 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
     .order("affiliation_order", { ascending: true, nullsFirst: false })
     .order("entry_name", { ascending: true });
 
-  const entryIds = (entries ?? []).map((e) => e.id);
+  const entries = (entriesData ?? []) as unknown as EntryRow[];
+  const entryIds = entries.map((e) => e.id);
 
-  const memberMap = new Map<
-    string,
-    Array<{
-      id: string;
-      name: string;
-      affiliation: string | null;
-      member_order: number | null;
-    }>
-  >();
+  const memberMap = new Map<string, TeamMemberRow[]>();
 
   if (entryIds.length > 0) {
-    const { data: teamMembers } = await supabase
+    const { data: teamMembersData } = await supabase
       .from("team_members")
       .select("id, entry_id, name, affiliation, member_order")
       .in("entry_id", entryIds)
       .order("member_order", { ascending: true });
 
-    for (const member of teamMembers ?? []) {
+    const teamMembers = (teamMembersData ?? []) as unknown as TeamMemberRow[];
+
+    for (const member of teamMembers) {
       if (!memberMap.has(member.entry_id)) {
         memberMap.set(member.entry_id, []);
       }
-      memberMap.get(member.entry_id)!.push({
-        id: member.id,
-        name: member.name,
-        affiliation: member.affiliation,
-        member_order: member.member_order,
-      });
+      memberMap.get(member.entry_id)!.push(member);
     }
   }
 
@@ -151,7 +177,7 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
           チーム受付一覧
         </div>
 
-        {entries && entries.length > 0 ? (
+        {entries.length > 0 ? (
           <div style={{ overflowX: "auto" }}>
             <table
               style={{
@@ -190,15 +216,13 @@ export default async function TeamDivisionCheckinPage({ params }: PageProps) {
               </thead>
 
               <tbody>
-                {(entries ?? []).map((entry) => {
+                {entries.map((entry) => {
                   const teamMembers = memberMap.get(entry.id) ?? [];
-                  const checkin = Array.isArray(entry.checkins)
-                    ? entry.checkins[0]
-                    : (entry.checkins as any);
+                  const checkin = entry.checkins?.[0] ?? null;
 
                   const memberCount = teamMembers.length;
                   const memberShortage =
-                    division.team_member_required &&
+                    Boolean(division.team_member_required) &&
                     division.team_member_count_min !== null &&
                     memberCount < division.team_member_count_min;
 

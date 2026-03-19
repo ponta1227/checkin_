@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 type EntryRow = {
   id: string;
   entry_name: string | null;
@@ -104,7 +108,7 @@ function buildKnockoutFirstRound(entryIds: string[]) {
 }
 
 async function deleteExistingTeamMatchRelatedData(params: {
-  supabase: ReturnType<typeof createSupabaseServerClient>;
+  supabase: SupabaseServerClient;
   divisionId: string;
 }) {
   const { supabase, divisionId } = params;
@@ -163,7 +167,7 @@ export async function POST(request: Request) {
       return new Response("生成対象が不正です。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: division, error: divisionError } = await supabase
       .from("divisions")
@@ -366,8 +370,8 @@ export async function POST(request: Request) {
         const matchRow = roundRows[0][i];
 
         let status = "pending";
-        let player1EntryId = pair.team1;
-        let player2EntryId = pair.team2;
+        const player1EntryId = pair.team1;
+        const player2EntryId = pair.team2;
         let winnerEntryId: string | null = null;
         let scoreText: string | null = null;
 

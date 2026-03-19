@@ -10,7 +10,7 @@ type PageProps = {
 
 export default async function TeamStandingsPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")

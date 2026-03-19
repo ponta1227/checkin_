@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -17,15 +18,19 @@ type EntryRow = {
   seed: number | null;
   entry_rating: number | null;
   ranking_for_draw: number | null;
-  players: Array<{
-    id: string;
-    name: string | null;
-    affiliation: string | null;
-    rating: number | null;
-  }> | null;
-  checkins: Array<{
-    status: string | null;
-  }> | null;
+  players:
+    | Array<{
+        id: string;
+        name: string | null;
+        affiliation: string | null;
+        rating: number | null;
+      }>
+    | null;
+  checkins:
+    | Array<{
+        status: string | null;
+      }>
+    | null;
 };
 
 function isCheckedIn(entry: EntryRow) {
@@ -64,7 +69,7 @@ function buildLabel(entry: EntryRow) {
 
 export default async function BracketEditPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")
@@ -121,7 +126,7 @@ export default async function BracketEditPage({ params }: PageProps) {
     );
   }
 
-  const allEntries = ((allEntriesData ?? []) as unknown as EntryRow[]);
+  const allEntries = (allEntriesData ?? []) as unknown as EntryRow[];
   const checkedInEntries = sortEntries(
     allEntries.filter((entry) => isCheckedIn(entry))
   );
@@ -129,7 +134,14 @@ export default async function BracketEditPage({ params }: PageProps) {
 
   return (
     <main style={{ padding: "24px", maxWidth: "1100px" }}>
-      <div style={{ marginBottom: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginBottom: "24px",
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
         <Link
           href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}`}
           style={linkButtonStyle()}
@@ -162,7 +174,13 @@ export default async function BracketEditPage({ params }: PageProps) {
                   <div style={{ fontWeight: 700, wordBreak: "break-word" }}>
                     {buildLabel(entry)}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#666", wordBreak: "break-word" }}>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#666",
+                      wordBreak: "break-word",
+                    }}
+                  >
                     {entry.entry_affiliation ?? ""}
                   </div>
                 </div>
@@ -185,11 +203,23 @@ export default async function BracketEditPage({ params }: PageProps) {
                   <div style={{ fontWeight: 700, wordBreak: "break-word" }}>
                     {buildLabel(entry)}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#666", wordBreak: "break-word" }}>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#666",
+                      wordBreak: "break-word",
+                    }}
+                  >
                     {entry.entry_affiliation ?? ""}
                   </div>
                 </div>
-                <div style={{ fontSize: "12px", color: "#666", whiteSpace: "nowrap" }}>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: "#666",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   draw: {entry.ranking_for_draw ?? "-"} / rating:{" "}
                   {entry.entry_rating ?? entry.players?.[0]?.rating ?? "-"}
                 </div>
@@ -202,7 +232,7 @@ export default async function BracketEditPage({ params }: PageProps) {
   );
 }
 
-function linkButtonStyle(): React.CSSProperties {
+function linkButtonStyle(): CSSProperties {
   return {
     display: "inline-block",
     padding: "10px 14px",
@@ -214,20 +244,20 @@ function linkButtonStyle(): React.CSSProperties {
   };
 }
 
-const cardStyle: React.CSSProperties = {
+const cardStyle: CSSProperties = {
   border: "1px solid #ddd",
   borderRadius: "10px",
   padding: "16px",
   background: "white",
 };
 
-const sectionTitleStyle: React.CSSProperties = {
+const sectionTitleStyle: CSSProperties = {
   marginTop: 0,
   marginBottom: "12px",
   fontSize: "18px",
 };
 
-const rowStyle: React.CSSProperties = {
+const rowStyle: CSSProperties = {
   display: "flex",
   gap: "12px",
   alignItems: "flex-start",

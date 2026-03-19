@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
 
     const token = crypto.randomBytes(24).toString("hex");
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("divisions")

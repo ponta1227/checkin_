@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { regenerateGroupMatches } from "@/lib/league/regenerateGroupMatches";
+import { regenerateGroupMatches } from "@/lib/leagues/regenerateGroupMatches";
 
 type EditedGroup = {
   groupId: string;
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       return new NextResponse("編集内容がありません。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const targetGroupIds = editedGroups.map((g) => g.groupId);
 
@@ -35,9 +35,12 @@ export async function POST(request: Request) {
       .in("group_id", targetGroupIds);
 
     if (matchesError) {
-      return new NextResponse(`試合状況取得に失敗しました: ${matchesError.message}`, {
-        status: 500,
-      });
+      return new NextResponse(
+        `試合状況取得に失敗しました: ${matchesError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     const hasStarted = (currentMatches ?? []).some(
@@ -57,12 +60,19 @@ export async function POST(request: Request) {
       .in("group_id", targetGroupIds);
 
     if (membersError) {
-      return new NextResponse(`リーグメンバー取得に失敗しました: ${membersError.message}`, {
-        status: 500,
-      });
+      return new NextResponse(
+        `リーグメンバー取得に失敗しました: ${membersError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
-    const memberRowByEntryId = new Map<string, { id: string; group_id: string; entry_id: string }>();
+    const memberRowByEntryId = new Map<
+      string,
+      { id: string; group_id: string; entry_id: string }
+    >();
+
     for (const row of currentMembers ?? []) {
       memberRowByEntryId.set(row.entry_id, row);
     }
@@ -71,7 +81,9 @@ export async function POST(request: Request) {
     const uniqueEntryIds = new Set(allEntryIds);
 
     if (allEntryIds.length !== uniqueEntryIds.size) {
-      return new NextResponse("同じチームが重複して配置されています。", { status: 400 });
+      return new NextResponse("同じチームが重複して配置されています。", {
+        status: 400,
+      });
     }
 
     for (const entryId of allEntryIds) {
@@ -102,9 +114,12 @@ export async function POST(request: Request) {
           .eq("id", memberRow.id);
 
         if (updateError) {
-          return new NextResponse(`リーグメンバー更新に失敗しました: ${updateError.message}`, {
-            status: 500,
-          });
+          return new NextResponse(
+            `リーグメンバー更新に失敗しました: ${updateError.message}`,
+            {
+              status: 500,
+            }
+          );
         }
       }
     }
@@ -119,7 +134,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "リーグ編集保存に失敗しました。";
+      error instanceof Error
+        ? error.message
+        : "リーグ編集保存に失敗しました。";
+
     return new NextResponse(message, { status: 500 });
   }
 }

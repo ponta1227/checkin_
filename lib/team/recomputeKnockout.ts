@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type SupabaseClient = ReturnType<typeof createSupabaseServerClient>;
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
 
 type MatchNode = {
   id: string;
@@ -33,7 +35,7 @@ function isRealCompletedMatch(match: {
 }
 
 async function recomputeMatchFromPredecessors(
-  supabase: SupabaseClient,
+  supabase: SupabaseServerClient,
   matchId: string
 ): Promise<void> {
   const { data: current, error: currentError } = await supabase
@@ -41,7 +43,6 @@ async function recomputeMatchFromPredecessors(
     .select(
       "id, next_match_id, next_slot, player1_entry_id, player2_entry_id, winner_entry_id, status, score_text"
     )
-    .eq("id", matchId)
     .single<MatchNode>();
 
   if (currentError || !current) {
@@ -140,7 +141,7 @@ async function recomputeMatchFromPredecessors(
 }
 
 export async function recomputeDownstreamFromMatch(
-  supabase: SupabaseClient,
+  supabase: SupabaseServerClient,
   matchId: string
 ): Promise<void> {
   const { data: current, error } = await supabase

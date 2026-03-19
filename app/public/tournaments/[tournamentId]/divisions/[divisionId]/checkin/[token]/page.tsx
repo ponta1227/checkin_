@@ -11,9 +11,20 @@ type PageProps = {
   }>;
 };
 
+type EntryRow = {
+  id: string;
+  entry_name: string | null;
+  status: string | null;
+  team_members: string[] | null;
+  checkins:
+    | { id: string; status: string | null }[]
+    | { id: string; status: string | null }
+    | null;
+};
+
 export default async function PublicCheckinTokenPage({ params }: PageProps) {
   const { tournamentId, divisionId, token } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division, error: divisionError } = await supabase
     .from("divisions")
@@ -76,17 +87,7 @@ export default async function PublicCheckinTokenPage({ params }: PageProps) {
     );
   }
 
-  const typedEntries =
-    (entries as Array<{
-      id: string;
-      entry_name: string | null;
-      status: string | null;
-      team_members: string[] | null;
-      checkins:
-        | { id: string; status: string | null }[]
-        | { id: string; status: string | null }
-        | null;
-    }> | null) ?? [];
+  const typedEntries: EntryRow[] = (entries as EntryRow[] | null) ?? [];
 
   const teams = typedEntries.map((entry) => ({
     entryId: entry.id,
@@ -95,8 +96,8 @@ export default async function PublicCheckinTokenPage({ params }: PageProps) {
     members: Array.isArray(entry.team_members) ? entry.team_members : [],
     status: entry.status ?? null,
     checkinStatus: Array.isArray(entry.checkins)
-      ? entry.checkins[0]?.status ?? null
-      : entry.checkins?.status ?? null,
+      ? (entry.checkins[0]?.status ?? null)
+      : (entry.checkins?.status ?? null),
   }));
 
   return (

@@ -36,7 +36,7 @@ function countWins(games: Array<{ board_no: number; winner_side: string | null }
 
 export default async function TeamScorePage({ params }: PageProps) {
   const { tournamentId, divisionId, matchId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

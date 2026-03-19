@@ -47,7 +47,7 @@ export default async function DivisionImportCsvPage({
 }: PageProps) {
   const { tournamentId, divisionId } = await params;
   const resolvedSearchParams = await searchParams;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament } = await supabase
     .from("tournaments")

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       return new Response("オーダーJSONの形式が不正です。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: division, error: divisionError } = await supabase
       .from("divisions")

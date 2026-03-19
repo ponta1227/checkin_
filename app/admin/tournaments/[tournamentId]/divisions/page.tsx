@@ -14,7 +14,7 @@ type Division = {
 
 export default async function DivisionsPage({ params }: PageProps) {
   const { tournamentId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")

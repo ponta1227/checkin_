@@ -1,5 +1,9 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 type GroupMemberRow = {
   id: string;
   group_id: string;
@@ -40,8 +44,10 @@ function generateRoundRobinRounds(memberEntryIds: string[]) {
   > = [];
 
   for (let roundNo = 1; roundNo <= totalRounds; roundNo += 1) {
-    const pairs: Array<{ player1_entry_id: string | null; player2_entry_id: string | null }> =
-      [];
+    const pairs: Array<{
+      player1_entry_id: string | null;
+      player2_entry_id: string | null;
+    }> = [];
 
     for (let i = 0; i < arr.length / 2; i += 1) {
       pairs.push({
@@ -113,7 +119,10 @@ function assignReferees(params: {
     const nextPlayers = playersBySlot.get(nextSlot) ?? new Set<string>();
 
     let candidates = memberEntryIds.filter((entryId) => {
-      if (entryId === match.player1_entry_id || entryId === match.player2_entry_id) {
+      if (
+        entryId === match.player1_entry_id ||
+        entryId === match.player2_entry_id
+      ) {
         return false;
       }
       if (currentPlayers.has(entryId)) return false;
@@ -126,7 +135,10 @@ function assignReferees(params: {
 
     if (candidates.length === 0) {
       candidates = memberEntryIds.filter((entryId) => {
-        if (entryId === match.player1_entry_id || entryId === match.player2_entry_id) {
+        if (
+          entryId === match.player1_entry_id ||
+          entryId === match.player2_entry_id
+        ) {
           return false;
         }
         if (currentPlayers.has(entryId)) return false;
@@ -139,7 +151,10 @@ function assignReferees(params: {
 
     if (candidates.length === 0) {
       candidates = memberEntryIds.filter((entryId) => {
-        if (entryId === match.player1_entry_id || entryId === match.player2_entry_id) {
+        if (
+          entryId === match.player1_entry_id ||
+          entryId === match.player2_entry_id
+        ) {
           return false;
         }
         return true;
@@ -171,7 +186,7 @@ function assignReferees(params: {
 }
 
 export async function regenerateGroupMatches(params: {
-  supabase: ReturnType<typeof createSupabaseServerClient>;
+  supabase: SupabaseServerClient;
   groupId: string;
 }) {
   const { supabase, groupId } = params;
@@ -183,7 +198,9 @@ export async function regenerateGroupMatches(params: {
     .single();
 
   if (groupError || !group) {
-    throw new Error(`リーグ情報取得に失敗しました: ${groupError?.message ?? "unknown"}`);
+    throw new Error(
+      `リーグ情報取得に失敗しました: ${groupError?.message ?? "unknown"}`
+    );
   }
 
   const { data: membersData, error: membersError } = await supabase
@@ -205,7 +222,9 @@ export async function regenerateGroupMatches(params: {
     .eq("group_id", groupId);
 
   if (deleteMatchesError) {
-    throw new Error(`既存試合作成の削除に失敗しました: ${deleteMatchesError.message}`);
+    throw new Error(
+      `既存試合作成の削除に失敗しました: ${deleteMatchesError.message}`
+    );
   }
 
   if (memberIds.length < 2) {
@@ -213,7 +232,9 @@ export async function regenerateGroupMatches(params: {
   }
 
   const rounds = generateRoundRobinRounds(memberIds);
-  const tableNumbers = (group.table_numbers ?? []) as string[];
+  const tableNumbers = Array.isArray(group.table_numbers)
+    ? (group.table_numbers as string[])
+    : [];
   const effectiveTables = tableNumbers.length > 0 ? tableNumbers : [""];
   const tableCount = effectiveTables.length;
 
@@ -225,10 +246,19 @@ export async function regenerateGroupMatches(params: {
     const roundNo = roundIndex + 1;
 
     const actualPairs = rounds[roundIndex].filter(
-      (pair) => pair.player1_entry_id && pair.player2_entry_id
-    ) as Array<{ player1_entry_id: string; player2_entry_id: string }>;
+      (
+        pair
+      ): pair is {
+        player1_entry_id: string;
+        player2_entry_id: string;
+      } => Boolean(pair.player1_entry_id && pair.player2_entry_id)
+    );
 
-    for (let batchStart = 0; batchStart < actualPairs.length; batchStart += tableCount) {
+    for (
+      let batchStart = 0;
+      batchStart < actualPairs.length;
+      batchStart += tableCount
+    ) {
       const batch = actualPairs.slice(batchStart, batchStart + tableCount);
 
       for (let i = 0; i < batch.length; i += 1) {

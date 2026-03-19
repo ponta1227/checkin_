@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { buildTeamLeagueStandingsByGroup } from "@/lib/team/buildStandings";
 
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 type EntryRow = {
   id: string;
   entry_name: string | null;
@@ -238,7 +242,7 @@ function buildBracketRound1Pairs(seedRefs: LeagueSeedRef[]) {
 }
 
 async function deleteExistingLeagueAndKnockoutData(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: SupabaseServerClient,
   divisionId: string
 ) {
   const { data: existingBrackets } = await supabase
@@ -262,9 +266,11 @@ export async function POST(request: Request) {
     const tournamentId = String(formData.get("tournamentId") ?? "");
     const divisionId = String(formData.get("divisionId") ?? "");
     const actionType = String(formData.get("actionType") ?? "");
-    const generationTarget = String(formData.get("generationTarget") ?? "checked_in_only");
+    const generationTarget = String(
+      formData.get("generationTarget") ?? "checked_in_only"
+    );
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     if (!tournamentId || !divisionId) {
       return new Response("必要なIDが不足しています。", { status: 400 });
@@ -277,9 +283,12 @@ export async function POST(request: Request) {
       .single();
 
     if (divisionError || !division) {
-      return new Response(`種目取得に失敗しました: ${divisionError?.message ?? "not found"}`, {
-        status: 404,
-      });
+      return new Response(
+        `種目取得に失敗しました: ${divisionError?.message ?? "not found"}`,
+        {
+          status: 404,
+        }
+      );
     }
 
     if (division.event_type !== "team") {
@@ -287,13 +296,16 @@ export async function POST(request: Request) {
     }
 
     if (division.format !== "league_then_knockout") {
-      return new Response("このAPIは league_then_knockout 専用です。", { status: 400 });
+      return new Response("このAPIは league_then_knockout 専用です。", {
+        status: 400,
+      });
     }
 
     if (actionType === "generate_league") {
       const baseLeagueSize = Math.max(2, Number(formData.get("baseLeagueSize") ?? 3));
       const remainderPolicy =
-        String(formData.get("remainderPolicy") ?? "allow_smaller") === "allow_larger"
+        String(formData.get("remainderPolicy") ?? "allow_smaller") ===
+        "allow_larger"
           ? "allow_larger"
           : "allow_smaller";
 
@@ -323,7 +335,9 @@ export async function POST(request: Request) {
       const targetEntries = sortEntriesCheckedInOnly(typedEntries, generationTarget);
 
       if (targetEntries.length < 2) {
-        return new Response("リーグ生成に必要なチーム数が足りません。", { status: 400 });
+        return new Response("リーグ生成に必要なチーム数が足りません。", {
+          status: 400,
+        });
       }
 
       await deleteExistingLeagueAndKnockoutData(supabase, divisionId);
@@ -372,14 +386,20 @@ export async function POST(request: Request) {
           .insert(insertMatches);
 
         if (insertMatchError) {
-          return new Response(`リーグ試合生成に失敗しました: ${insertMatchError.message}`, {
-            status: 500,
-          });
+          return new Response(
+            `リーグ試合生成に失敗しました: ${insertMatchError.message}`,
+            {
+              status: 500,
+            }
+          );
         }
       }
 
       return NextResponse.redirect(
-        new URL(`/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`, request.url)
+        new URL(
+          `/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`,
+          request.url
+        )
       );
     }
 
@@ -458,7 +478,10 @@ export async function POST(request: Request) {
         })),
       });
 
-      const maxRank = Math.max(...groupedStandings.map((g) => g.standings.length), 0);
+      const maxRank = Math.max(
+        ...groupedStandings.map((g) => g.standings.length),
+        0
+      );
 
       const { data: existingBrackets } = await supabase
         .from("brackets")
@@ -582,7 +605,9 @@ export async function POST(request: Request) {
 
         for (let rank = 1; rank <= maxRank; rank += 1) {
           const refs = rankBuckets[rank].filter((r) =>
-            groupedStandings.some((g) => g.groupNo === r.groupNo && g.standings.length >= rank)
+            groupedStandings.some(
+              (g) => g.groupNo === r.groupNo && g.standings.length >= rank
+            )
           );
 
           if (refs.length === 0) continue;
@@ -668,14 +693,19 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.redirect(
-        new URL(`/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`, request.url)
+        new URL(
+          `/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`,
+          request.url
+        )
       );
     }
 
     return new Response("actionType が不正です。", { status: 400 });
   } catch (error) {
     return new Response(
-      error instanceof Error ? error.message : "リーグ→順位別トーナメント生成に失敗しました。",
+      error instanceof Error
+        ? error.message
+        : "リーグ→順位別トーナメント生成に失敗しました。",
       { status: 500 }
     );
   }

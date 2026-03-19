@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type SupabaseClientLike = ReturnType<typeof createSupabaseServerClient>;
+type SupabaseClientLike = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
 
 type MatchRow = {
   id: string;
@@ -29,8 +31,13 @@ type RatingHistoryRow = {
   delta: number;
 };
 
-function calculateWinnerDelta(winnerRating: number, loserRating: number, k = 32) {
-  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
+function calculateWinnerDelta(
+  winnerRating: number,
+  loserRating: number,
+  k = 32
+) {
+  const expectedWinner =
+    1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
   return Math.round(k * (1 - expectedWinner));
 }
 
@@ -65,7 +72,9 @@ async function revertExistingRatingHistory(
     .eq("match_id", matchId);
 
   if (historyError) {
-    throw new Error(`既存レーティング履歴の取得に失敗しました: ${historyError.message}`);
+    throw new Error(
+      `既存レーティング履歴の取得に失敗しました: ${historyError.message}`
+    );
   }
 
   const historyRows = (historyRowsData ?? []) as RatingHistoryRow[];
@@ -80,7 +89,9 @@ async function revertExistingRatingHistory(
     .in("id", playerIds);
 
   if (playersError) {
-    throw new Error(`既存レーティング戻し用の選手取得に失敗しました: ${playersError.message}`);
+    throw new Error(
+      `既存レーティング戻し用の選手取得に失敗しました: ${playersError.message}`
+    );
   }
 
   const players = (playersData ?? []) as PlayerRow[];
@@ -100,7 +111,9 @@ async function revertExistingRatingHistory(
       .eq("id", row.player_id);
 
     if (updateError) {
-      throw new Error(`既存レーティングの戻しに失敗しました: ${updateError.message}`);
+      throw new Error(
+        `既存レーティングの戻しに失敗しました: ${updateError.message}`
+      );
     }
   }
 
@@ -112,7 +125,9 @@ async function revertExistingRatingHistory(
     .in("id", historyIds);
 
   if (deleteError) {
-    throw new Error(`既存レーティング履歴の削除に失敗しました: ${deleteError.message}`);
+    throw new Error(
+      `既存レーティング履歴の削除に失敗しました: ${deleteError.message}`
+    );
   }
 }
 
@@ -159,8 +174,10 @@ async function applyRatingForMatch(params: {
     throw new Error("参加登録に対応する選手IDが見つかりませんでした。");
   }
 
-  const winnerPlayerId = winnerEntryId === player1EntryId ? player1Id : player2Id;
-  const loserPlayerId = winnerEntryId === player1EntryId ? player2Id : player1Id;
+  const winnerPlayerId =
+    winnerEntryId === player1EntryId ? player1Id : player2Id;
+  const loserPlayerId =
+    winnerEntryId === player1EntryId ? player2Id : player1Id;
 
   const { data: playersData, error: playersError } = await supabase
     .from("players")
@@ -192,7 +209,9 @@ async function applyRatingForMatch(params: {
     .eq("id", winnerPlayerId);
 
   if (updateWinnerError) {
-    throw new Error(`勝者レーティング更新に失敗しました: ${updateWinnerError.message}`);
+    throw new Error(
+      `勝者レーティング更新に失敗しました: ${updateWinnerError.message}`
+    );
   }
 
   const { error: updateLoserError } = await supabase
@@ -201,7 +220,9 @@ async function applyRatingForMatch(params: {
     .eq("id", loserPlayerId);
 
   if (updateLoserError) {
-    throw new Error(`敗者レーティング更新に失敗しました: ${updateLoserError.message}`);
+    throw new Error(
+      `敗者レーティング更新に失敗しました: ${updateLoserError.message}`
+    );
   }
 
   const { error: historyInsertError } = await supabase
@@ -232,7 +253,9 @@ async function applyRatingForMatch(params: {
     ]);
 
   if (historyInsertError) {
-    throw new Error(`レーティング履歴保存に失敗しました: ${historyInsertError.message}`);
+    throw new Error(
+      `レーティング履歴保存に失敗しました: ${historyInsertError.message}`
+    );
   }
 }
 
@@ -250,7 +273,7 @@ export async function POST(request: Request) {
       return new Response("必要な値が不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: matchData, error: matchError } = await supabase
       .from("matches")
@@ -286,9 +309,12 @@ export async function POST(request: Request) {
       .eq("id", matchId);
 
     if (updateMatchError) {
-      return new Response(`試合結果保存に失敗しました: ${updateMatchError.message}`, {
-        status: 500,
-      });
+      return new Response(
+        `試合結果保存に失敗しました: ${updateMatchError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     if (match.player1_entry_id && match.player2_entry_id) {

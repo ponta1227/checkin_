@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseClientLike = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 async function ensureCheckinRow(params: {
-  supabase: ReturnType<typeof createSupabaseServerClient>;
+  supabase: SupabaseClientLike;
   entryId: string;
 }) {
   const { supabase, entryId } = params;
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
       return new Response("必要な値が不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: division, error: divisionError } = await supabase
       .from("divisions")
@@ -145,9 +149,12 @@ export async function POST(request: Request) {
         .eq("id", entryId);
 
       if (entryUpdateError) {
-        return new Response(`entries更新に失敗しました: ${entryUpdateError.message}`, {
-          status: 500,
-        });
+        return new Response(
+          `entries更新に失敗しました: ${entryUpdateError.message}`,
+          {
+            status: 500,
+          }
+        );
       }
     } else if (actionType === "confirm_members") {
       const { error } = await supabase

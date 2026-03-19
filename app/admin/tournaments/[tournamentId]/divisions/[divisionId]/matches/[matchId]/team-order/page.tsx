@@ -31,7 +31,7 @@ export default async function TeamOrderPage({
   const resolvedSearchParams = await searchParams;
   const teamChoice = resolvedSearchParams.team;
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")

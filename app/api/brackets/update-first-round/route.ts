@@ -2,8 +2,24 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getBracketEligibleEntries } from "@/lib/brackets/regenerateMainBracket";
 
+type ServerSupabaseClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
+type MatchRow = {
+  id: string;
+  round_no: number | null;
+  match_no: number | null;
+  next_match_id: string | null;
+  next_slot: number | null;
+  player1_entry_id: string | null;
+  player2_entry_id: string | null;
+  winner_entry_id: string | null;
+  status: string | null;
+};
+
 async function advanceWinner(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: ServerSupabaseClient,
   matchId: string,
   winnerEntryId: string
 ) {
@@ -29,7 +45,7 @@ async function advanceWinner(
 }
 
 async function applyWalkovers(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: ServerSupabaseClient,
   bracketId: string
 ) {
   let changed = true;
@@ -99,6 +115,20 @@ async function applyWalkovers(
         }
 
         changed = true;
+      } else if (!winner && !p1 && !p2 && match.status !== "pending") {
+        const { error: updateError } = await supabase
+          .from("matches")
+          .update({
+            status: "pending",
+            score_text: null,
+          })
+          .eq("id", match.id);
+
+        if (updateError) {
+          throw new Error(`試合状態更新に失敗しました: ${updateError.message}`);
+        }
+
+        changed = true;
       }
     }
   }
@@ -115,7 +145,7 @@ export async function POST(request: Request) {
       return new Response("必要なIDが不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: bracket, error: bracketError } = await supabase
       .from("brackets")
@@ -133,7 +163,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: matches, error: matchesError } = await supabase
+    const { data: matchesData, error: matchesError } = await supabase
       .from("matches")
       .select(
         "id, round_no, match_no, next_match_id, next_slot, player1_entry_id, player2_entry_id, winner_entry_id, status"
@@ -148,7 +178,9 @@ export async function POST(request: Request) {
       });
     }
 
-    if ((matches ?? []).some((match) => match.status === "completed")) {
+    const matches = (matchesData ?? []) as MatchRow[];
+
+    if (matches.some((match) => match.status === "completed")) {
       return NextResponse.redirect(
         new URL(
           `/admin/tournaments/${tournamentId}/divisions/${divisionId}/bracket/edit?error=has_completed_results`,
@@ -157,7 +189,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const firstRoundMatches = (matches ?? []).filter((match) => match.round_no === 1);
+    const firstRoundMatches = matches.filter((match) => match.round_no === 1);
     const bracketSize = firstRoundMatches.length * 2;
 
     const eligibleEntries = await getBracketEligibleEntries(supabase, divisionId);
@@ -203,9 +235,10 @@ export async function POST(request: Request) {
       );
     }
 
-    for (const match of matches ?? []) {
+    for (const match of matches) {
       if (match.round_no === 1) {
-        const slotIndex = (match.match_no - 1) * 2;
+        const matchNo = match.match_no ?? 0;
+        const slotIndex = (matchNo - 1) * 2;
         const player1EntryId = slots[slotIndex] || null;
         const player2EntryId = slots[slotIndex + 1] || null;
 

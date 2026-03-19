@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       return new Response("不正なステータスです。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: existingCheckin } = await supabase
       .from("checkins")

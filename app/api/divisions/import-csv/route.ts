@@ -227,7 +227,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     let playersCreated = 0;
     let playersReused = 0;

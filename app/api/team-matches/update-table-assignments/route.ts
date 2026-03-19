@@ -37,13 +37,16 @@ export async function POST(request: Request) {
       return new Response("matchId が不足しています。", { status: 400 });
     }
 
-    if (mode === "league" && (!Number.isInteger(leagueGroupNo) || Number(leagueGroupNo) < 1)) {
+    if (
+      mode === "league" &&
+      (!Number.isInteger(leagueGroupNo) || Number(leagueGroupNo) < 1)
+    ) {
       return new Response("leagueGroupNo が不正です。", { status: 400 });
     }
 
     const courtNos = rawCourtNos
-      .filter((n) => Number.isInteger(n) && n >= 1)
-      .map((n) => Number(n));
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n) && n >= 1);
 
     const deduped: number[] = [];
     for (const n of courtNos) {
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
 
     const finalCourts = deduped.slice(0, 4);
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: tournament, error: tournamentError } = await supabase
       .from("tournaments")
@@ -68,15 +71,25 @@ export async function POST(request: Request) {
     }
 
     if (finalCourts.some((n) => n > Number(tournament.table_count ?? 0))) {
-      return new Response("使用コート数の範囲外のコート番号が含まれています。", { status: 400 });
+      return new Response(
+        "使用コート数の範囲外のコート番号が含まれています。",
+        { status: 400 }
+      );
     }
 
     if (mode === "league") {
-      await supabase
+      const { error: deleteError } = await supabase
         .from("division_league_court_assignments")
         .delete()
         .eq("division_id", divisionId)
         .eq("league_group_no", Number(leagueGroupNo));
+
+      if (deleteError) {
+        return new Response(
+          `リーグコート既存データ削除に失敗しました: ${deleteError.message}`,
+          { status: 500 }
+        );
+      }
 
       if (finalCourts.length > 0) {
         const rows = finalCourts.map((courtNo, index) => ({
@@ -91,9 +104,12 @@ export async function POST(request: Request) {
           .insert(rows);
 
         if (insertError) {
-          return new Response(`リーグコート保存に失敗しました: ${insertError.message}`, {
-            status: 500,
-          });
+          return new Response(
+            `リーグコート保存に失敗しました: ${insertError.message}`,
+            {
+              status: 500,
+            }
+          );
         }
       }
 
@@ -114,7 +130,17 @@ export async function POST(request: Request) {
       );
     }
 
-    await supabase.from("match_table_assignments").delete().eq("match_id", matchId);
+    const { error: deleteAssignmentError } = await supabase
+      .from("match_table_assignments")
+      .delete()
+      .eq("match_id", matchId);
+
+    if (deleteAssignmentError) {
+      return new Response(
+        `試合コート既存データ削除に失敗しました: ${deleteAssignmentError.message}`,
+        { status: 500 }
+      );
+    }
 
     if (finalCourts.length > 0) {
       const rows = finalCourts.map((courtNo, index) => ({
@@ -128,9 +154,12 @@ export async function POST(request: Request) {
         .insert(rows);
 
       if (insertError) {
-        return new Response(`試合コート保存に失敗しました: ${insertError.message}`, {
-          status: 500,
-        });
+        return new Response(
+          `試合コート保存に失敗しました: ${insertError.message}`,
+          {
+            status: 500,
+          }
+        );
       }
     }
 
@@ -142,9 +171,12 @@ export async function POST(request: Request) {
       .eq("id", matchId);
 
     if (updateMatchError) {
-      return new Response(`matches 更新に失敗しました: ${updateMatchError.message}`, {
-        status: 500,
-      });
+      return new Response(
+        `matches 更新に失敗しました: ${updateMatchError.message}`,
+        {
+          status: 500,
+        }
+      );
     }
 
     return NextResponse.json({ ok: true });

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { buildStandings } from "@/lib/league/buildStandings";
+import { buildStandings } from "@/lib/leagues/buildStandings";
 import { normalizeDivisionFormat } from "@/lib/divisions/format";
 import { resolveLeagueKnockoutSources } from "@/lib/league-knockout/resolveSources";
+
+type ServerSupabaseClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
 
 type GroupRow = {
   id: string;
@@ -40,6 +44,22 @@ type KnockoutSource = {
 type MatchSeedPayload = {
   source1: KnockoutSource | null;
   source2: KnockoutSource | null;
+};
+
+type EntryPlayerRow = {
+  id: string;
+  name: string | null;
+  affiliation: string | null;
+};
+
+type EntrySelectRow = {
+  id: string;
+  players: EntryPlayerRow[] | null;
+};
+
+type EntryMapValue = {
+  id: string;
+  players: EntryPlayerRow | null;
 };
 
 function nextPowerOfTwo(n: number) {
@@ -163,7 +183,7 @@ function buildRoundSeedPayloads(params: {
 }
 
 async function cleanupExistingBracket(params: {
-  supabase: ReturnType<typeof createSupabaseServerClient>;
+  supabase: ServerSupabaseClient;
   divisionId: string;
   bracketType: string;
 }) {
@@ -193,7 +213,7 @@ async function cleanupExistingBracket(params: {
 }
 
 async function createBracket(params: {
-  supabase: ReturnType<typeof createSupabaseServerClient>;
+  supabase: ServerSupabaseClient;
   divisionId: string;
   bracketType: string;
   sources: KnockoutSource[];
@@ -334,7 +354,7 @@ export async function POST(request: Request) {
       return new Response("必要なIDが不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: division } = await supabase
       .from("divisions")
@@ -393,9 +413,23 @@ export async function POST(request: Request) {
       });
     }
 
-    const entryMap = new Map<string, any>();
-    for (const entry of entriesData ?? []) {
-      entryMap.set(entry.id, entry);
+    const entryMap = new Map<string, EntryMapValue>();
+    for (const rawEntry of (entriesData ?? []) as EntrySelectRow[]) {
+      const firstPlayer =
+        Array.isArray(rawEntry.players) && rawEntry.players.length > 0
+          ? rawEntry.players[0]
+          : null;
+
+      entryMap.set(rawEntry.id, {
+        id: rawEntry.id,
+        players: firstPlayer
+          ? {
+              id: firstPlayer.id,
+              name: firstPlayer.name,
+              affiliation: firstPlayer.affiliation,
+            }
+          : null,
+      });
     }
 
     const { data: membersData, error: membersError } = await supabase
@@ -462,7 +496,7 @@ export async function POST(request: Request) {
       );
       const groupMatches = matchesByGroup.get(group.id) ?? [];
 
-      const standings = buildStandings({
+      buildStandings({
         groupMembers,
         groupMatches,
         entryMap,

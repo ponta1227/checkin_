@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return new Response("不正な受付状態です。", { status: 400 });
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const checkedInAt = nextStatus === "checked_in" ? new Date().toISOString() : null;
 
   const { data: existingCheckin } = await supabase

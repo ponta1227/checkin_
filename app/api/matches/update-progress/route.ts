@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseClientLike = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
+
 async function advanceWinner(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: SupabaseClientLike,
   matchId: string,
   winnerEntryId: string
 ) {
@@ -26,7 +30,7 @@ async function advanceWinner(
 }
 
 async function applyWalkovers(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: SupabaseClientLike,
   bracketId: string
 ) {
   let changed = true;
@@ -72,7 +76,13 @@ async function applyWalkovers(
 
         await advanceWinner(supabase, match.id, p2);
         changed = true;
-      } else if (!winner && p1 && p2 && match.status !== "ready" && match.status !== "in_progress") {
+      } else if (
+        !winner &&
+        p1 &&
+        p2 &&
+        match.status !== "ready" &&
+        match.status !== "in_progress"
+      ) {
         await supabase
           .from("matches")
           .update({
@@ -102,7 +112,7 @@ export async function POST(request: Request) {
       return new Response("必要な値が不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: match, error: matchError } = await supabase
       .from("matches")
@@ -118,14 +128,19 @@ export async function POST(request: Request) {
       .single();
 
     if (matchError || !match) {
-      return new Response(`試合取得に失敗しました: ${matchError?.message ?? "not found"}`, {
-        status: 404,
-      });
+      return new Response(
+        `試合取得に失敗しました: ${matchError?.message ?? "not found"}`,
+        {
+          status: 404,
+        }
+      );
     }
 
     if (action === "start") {
       if (!match.player1_entry_id || !match.player2_entry_id) {
-        return new Response("対戦相手が未確定のため開始できません。", { status: 400 });
+        return new Response("対戦相手が未確定のため開始できません。", {
+          status: 400,
+        });
       }
 
       if (!tableNo.trim()) {
@@ -151,7 +166,9 @@ export async function POST(request: Request) {
 
     if (action === "complete") {
       if (!match.player1_entry_id || !match.player2_entry_id) {
-        return new Response("対戦相手が未確定のため確定できません。", { status: 400 });
+        return new Response("対戦相手が未確定のため確定できません。", {
+          status: 400,
+        });
       }
 
       if (
@@ -161,7 +178,8 @@ export async function POST(request: Request) {
         return new Response("不正な勝者です。", { status: 400 });
       }
 
-      let gameScores: Array<{ p1: number | null; p2: number | null }> | null = null;
+      let gameScores: Array<{ p1: number | null; p2: number | null }> | null =
+        null;
 
       if (gameScoresRaw) {
         try {

@@ -122,7 +122,7 @@ function sortEntries(entries: EntryRow[]) {
 
 export default async function LeagueKnockoutPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")

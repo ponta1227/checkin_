@@ -7,7 +7,7 @@ type PageProps = {
 
 export default async function TournamentDetailPage({ params }: PageProps) {
   const { tournamentId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: tournament, error } = await supabase
     .from("tournaments")

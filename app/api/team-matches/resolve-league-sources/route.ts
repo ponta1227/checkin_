@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       return new Response("divisionId が不足しています。", { status: 400 });
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: entries, error: entriesError } = await supabase
       .from("entries")

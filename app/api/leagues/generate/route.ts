@@ -546,7 +546,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data: entriesData, error: entriesError } = await supabase
       .from("entries")

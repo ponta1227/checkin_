@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatLeagueSourceLabel } from "@/lib/team/displaySources";
@@ -53,7 +54,10 @@ function getBracketLabel(bracketType: string) {
   return bracketType || "-";
 }
 
-function getStatusText(status: string | null | undefined, scoreText: string | null | undefined) {
+function getStatusText(
+  status: string | null | undefined,
+  scoreText: string | null | undefined
+) {
   if (status === "completed") return scoreText ?? "完了";
   if (status === "in_progress") return "試合中";
   if (status === "ready") return "入力可能";
@@ -133,7 +137,7 @@ function getRoundGap(roundIndex: number) {
 
 export default async function TeamBracketPage({ params }: PageProps) {
   const { tournamentId, divisionId } = await params;
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: division } = await supabase
     .from("divisions")
@@ -207,15 +211,15 @@ export default async function TeamBracketPage({ params }: PageProps) {
     );
   }
 
-  const typedMatches = ((matches ?? []) as MatchRow[]) ?? [];
+  const typedMatches = (matches ?? []) as MatchRow[];
 
   const entryIds = Array.from(
     new Set(
       typedMatches
         .flatMap((m) => [m.player1_entry_id, m.player2_entry_id, m.winner_entry_id])
-        .filter(Boolean)
+        .filter((id): id is string => Boolean(id))
     )
-  ) as string[];
+  );
 
   const { data: matchEntries } =
     entryIds.length > 0
@@ -266,11 +270,24 @@ export default async function TeamBracketPage({ params }: PageProps) {
 
   return (
     <main style={{ padding: "24px", maxWidth: "1600px" }}>
-      <div style={{ marginBottom: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-        <Link href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}`} style={topLinkStyle()}>
+      <div
+        style={{
+          marginBottom: "24px",
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <Link
+          href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}`}
+          style={topLinkStyle()}
+        >
           種目管理へ
         </Link>
-        <Link href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`} style={topLinkStyle()}>
+        <Link
+          href={`/admin/tournaments/${tournamentId}/divisions/${divisionId}/matches`}
+          style={topLinkStyle()}
+        >
           試合一覧へ
         </Link>
       </div>
@@ -554,7 +571,7 @@ function BracketMatchCard({
   );
 }
 
-function topLinkStyle(): React.CSSProperties {
+function topLinkStyle(): CSSProperties {
   return {
     display: "inline-block",
     padding: "10px 14px",
